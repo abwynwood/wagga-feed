@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Wagga Livestock Market Reports – Beef Central</title>
+    <link>https://www.beefcentral.com/markets/wagga/</link>
+    <description>Latest Wagga saleyard reports from BeefCentral.com</description>
+    <language>en-au</language>
+
+    <!-- This item updates automatically once I connect your scraper -->
+    <item>
+      <title>Latest Wagga Report</title>
+      <link>https://www.beefcentral.com/markets/wagga/</link>
+      <description>Live Wagga market report feed</description>
+    </item>
+
+  </channel>
+</rss>
