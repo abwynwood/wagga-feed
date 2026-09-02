@@ -9,29 +9,17 @@ def fetch_report():
     page = requests.get(URL)
     soup = BeautifulSoup(page.content, "html.parser")
 
-    # Main content container
-    content = soup.find("div", class_="report-content")
+    # Grab ALL text blocks on the page
+    paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
+    headers = [h.get_text(strip=True) for h in soup.find_all(["h1", "h2", "h3"])]
+    lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li")) for ul in soup.find_all("ul")]
 
-    if not content:
-        return (
-            "Date unavailable",
-            "Yarding unavailable",
-            "Trend information unavailable",
-            "Top prices unavailable",
-            "Commentary unavailable",
-            datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
-        )
-
-    # Extract fields safely
-    def safe_text(selector):
-        tag = content.find(selector)
-        return tag.get_text(strip=True) if tag else "Unavailable"
-
-    date = safe_text("h2")
-    yarding = safe_text("div")
-    trends = safe_text("section")
-    top_prices = safe_text("ul")
-    commentary = safe_text("p")
+    # Assign best guesses
+    date = headers[0] if headers else "Date unavailable"
+    yarding = paragraphs[0] if paragraphs else "Yarding unavailable"
+    trends = paragraphs[1] if len(paragraphs) > 1 else "Trends unavailable"
+    commentary = paragraphs[-1] if paragraphs else "Commentary unavailable"
+    top_prices = lists[0] if lists else "Top prices unavailable"
 
     pubdate = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
