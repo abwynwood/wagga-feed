@@ -3,18 +3,18 @@
   <channel>
     <title>Griffith Sheep Sale Report</title>
     <link>https://agoralivestock.com.au/griffith-sheep-sale-report</link>
-    <description>Latest Griffith sheep saleyard market report</description>
+    <description>Automatically updated Griffith sheep sale report</description>
+    <language>en-au</language>
 
     <item>
-      <title>Griffith Sheep Sale – {{date}}</title>
-      <description>
-        Total yarding: {{yarding}}
-        Price trends: {{trends}}
-        Top prices: {{top_prices}}
-        Commentary: {{commentary}}
-      </description>
-      <link>https://agoralivestock.com.au/griffith-sheep-sale-report</link>
-      <pubDate>{{pubdate}}</pubDate>
+      <title>Griffith Sheep Sale – Date unavailable</title>
+      <pubDate>Wed, 02 Sep 2026 02:29:06 +0000</pubDate>
+      <description><![CDATA[
+        <strong>Yarding:</strong> Yarding unavailable<br><br>
+        <strong>Trends:</strong> Trend information unavailable<br><br>
+        <strong>Top Prices:</strong> Top prices unavailable<br><br>
+        <strong>Commentary:</strong> Commentary unavailable
+      ]]></description>
     </item>
 
   </channel>

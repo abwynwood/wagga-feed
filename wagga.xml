@@ -3,21 +3,14 @@
   <channel>
     <title>Wagga Livestock Market Reports – Beef Central</title>
     <link>https://www.beefcentral.com/markets/wagga/</link>
-    <description>Latest Wagga saleyard reports from BeefCentral.com</description>
+    <description>Automatically updated feed of Wagga saleyard reports</description>
     <language>en-au</language>
 
-    <!-- This item updates automatically once I connect your scraper -->
     <item>
-     <title>Wagga cattle market report – Latest Update</title>
-  <link>https://www.beefcentral.com/markets/wagga/</link>
-  <description>
-    Yarding: 4,360  
-    Heavy steers firm  
-    Cows 384–428c/kg  
-    Heifers stronger  
-    Market steady with improved competition
-  </description>
-</item>
+      <title>Wagga market report unavailable</title>
+      <link>https://www.beefcentral.com/markets/wagga/</link>
+      <description>No report found on Beef Central.</description>
+    </item>
 
   </channel>
 </rss>
