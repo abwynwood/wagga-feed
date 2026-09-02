@@ -1,9 +1,8 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
-import os
 
-# MLA Griffith sheep/lamb report
+# MLA Griffith sheep/lamb report page
 URL = "https://www.mla.com.au/prices-markets/market-reports/sheep/griffith/"
 XML_FILE = "griffith.xml"
 
@@ -16,19 +15,19 @@ def fetch_report():
     page = requests.get(URL, headers=headers)
     soup = BeautifulSoup(page.content, "html.parser")
 
-    # MLA uses the same structure for sheep/lamb reports
+    # MLA uses this container for all market reports
     report_section = soup.find("div", class_="market-report")
 
     # If MLA hasn't published a new report yet → skip update
     if not report_section:
         return None
 
-    # Extract paragraphs and lists from the report
+    # Extract paragraphs and lists
     paragraphs = [p.get_text(strip=True) for p in report_section.find_all("p")]
     lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li"))
              for ul in report_section.find_all("ul")]
 
-    # If MLA page is empty or placeholder → skip update
+    # If MLA page is empty → skip update
     if len(paragraphs) == 0:
         return None
 
