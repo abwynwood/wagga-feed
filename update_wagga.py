@@ -2,38 +2,40 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-URL = "https://www.beefcentral.com/markets/wagga/"
+# MLA Wagga cattle report (no Cloudflare, safe for GitHub Actions)
+URL = "https://www.mla.com.au/prices-markets/market-reports/cattle/wagga/"
 XML_FILE = "wagga.xml"
 
 def fetch_report():
-    # Full Chrome browser headers so Cloudflare allows GitHub Actions
+    # MLA does NOT block GitHub Actions – simple headers are enough
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Referer": "https://www.google.com/",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
     }
 
     page = requests.get(URL, headers=headers)
     soup = BeautifulSoup(page.content, "html.parser")
 
-    # Collect text blocks from the page
-    headers_text = [h.get_text(strip=True) for h in soup.find_all(["h1", "h2", "h3"])]
-    paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
-    lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li")) for ul in soup.find_all("ul")]
+    # MLA structure: main content is inside <div class="market-report">
+    report_section = soup.find("div", class_="market-report")
 
-    # Assign best guesses based on page structure
-    title = headers_text[0] if headers_text else "Wagga Cattle Market Report"
-    summary = paragraphs[0] if paragraphs else "Summary unavailable"
-    details = paragraphs[1] if len(paragraphs) > 1 else "Details unavailable"
-    extra = lists[0] if lists else "Additional info unavailable"
+    if not report_section:
+        # Fallback if MLA changes layout
+        paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
+        summary = paragraphs[0] if paragraphs else "Summary unavailable"
+        details = paragraphs[1] if len(paragraphs) > 1 else "Details unavailable"
+        extra = paragraphs[-1] if paragraphs else "Additional info unavailable"
+        title = "Wagga Cattle Market Report"
+    else:
+        # Extract text from MLA report
+        paragraphs = [p.get_text(strip=True) for p in report_section.find_all("p")]
+        lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li"))
+                 for ul in report_section.find_all("ul")]
+
+        title = "Wagga Cattle Market Report"
+        summary = paragraphs[0] if paragraphs else "Summary unavailable"
+        details = paragraphs[1] if len(paragraphs) > 1 else "Details unavailable"
+        extra = lists[0] if lists else "Additional info unavailable"
 
     pubdate = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
@@ -46,7 +48,7 @@ def update_xml(title, summary, details, extra, pubdate):
   <channel>
     <title>Wagga Cattle Market Report</title>
     <link>{URL}</link>
-    <description>Automatically updated Wagga cattle market report</description>
+    <description>Automatically updated Wagga cattle market report (MLA source)</description>
     <language>en-au</language>
 
     <item>
