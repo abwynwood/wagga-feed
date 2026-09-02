@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>NSW Barley BAR1 Price</title>
+    <link>https://www.dpi.nsw.gov.au/agriculture/grains</link>
+    <description>Latest NSW BAR1 barley average price</description>
+    <language>en-au</language>
+
+    <item>
+      <title>NSW Barley BAR1 Price</title>
+      <link>https://www.dpi.nsw.gov.au/agriculture/grains</link>
+      <guid>barley-bar1-price</guid>
+      <pubDate>Thu, 03 Sep 2026 00:00:00 +0000</pubDate>
+      <description><![CDATA[
+        <p><strong>Price:</strong> Pending update</p>
+        <p><strong>Details:</strong> The latest BAR1 barley price will appear here automatically.</p>
+      ]]></description>
+    </item>
+
+  </channel>
+</rss>
