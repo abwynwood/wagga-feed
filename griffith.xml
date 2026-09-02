@@ -3,6 +3,7 @@
   <channel>
     <title>Griffith Sheep Sale Report</title>
 
+    <!-- Stable MLA sheep index (never 404) -->
     <link>https://www.mla.com.au/prices-markets/market-reports/sheep/</link>
 
     <description>Automatically updated Griffith sheep sale report (MLA source)</description>
