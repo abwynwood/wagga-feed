@@ -1,13 +1,12 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+import os
 
-# MLA Wagga cattle report (no Cloudflare, safe for GitHub Actions)
 URL = "https://www.mla.com.au/prices-markets/market-reports/cattle/wagga/"
 XML_FILE = "wagga.xml"
 
 def fetch_report():
-    # MLA does NOT block GitHub Actions – simple headers are enough
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9",
@@ -16,26 +15,27 @@ def fetch_report():
     page = requests.get(URL, headers=headers)
     soup = BeautifulSoup(page.content, "html.parser")
 
-    # MLA structure: main content is inside <div class="market-report">
     report_section = soup.find("div", class_="market-report")
 
     if not report_section:
-        # Fallback if MLA changes layout
-        paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
-        summary = paragraphs[0] if paragraphs else "Summary unavailable"
-        details = paragraphs[1] if len(paragraphs) > 1 else "Details unavailable"
-        extra = paragraphs[-1] if paragraphs else "Additional info unavailable"
-        title = "Wagga Cattle Market Report"
-    else:
-        # Extract text from MLA report
-        paragraphs = [p.get_text(strip=True) for p in report_section.find_all("p")]
-        lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li"))
-                 for ul in report_section.find_all("ul")]
+        return None  # No new report available
 
-        title = "Wagga Cattle Market Report"
-        summary = paragraphs[0] if paragraphs else "Summary unavailable"
-        details = paragraphs[1] if len(paragraphs) > 1 else "Details unavailable"
-        extra = lists[0] if lists else "Additional info unavailable"
+    paragraphs = [p.get_text(strip=True) for p in report_section.find_all("p")]
+    lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li"))
+             for ul in report_section.find_all("ul")]
+
+    # If MLA page is empty or placeholder, do not update
+    if len(paragraphs) == 0:
+        return None
+
+    title = "Wagga Cattle Market Report"
+    summary = paragraphs[0] if paragraphs else None
+    details = paragraphs[1] if len(paragraphs) > 1 else None
+    extra = lists[0] if lists else None
+
+    # If all fields are empty, skip update
+    if not summary and not details and not extra:
+        return None
 
     pubdate = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
@@ -69,5 +69,12 @@ def update_xml(title, summary, details, extra, pubdate):
 
 
 if __name__ == "__main__":
-    title, summary, details, extra, pubdate = fetch_report()
-    update_xml(title, summary, details, extra, pubdate)
+    result = fetch_report()
+
+    if result is None:
+        # No new report → keep last week's XML
+        print("No new MLA report available — keeping existing wagga.xml")
+    else:
+        title, summary, details, extra, pubdate = result
+        update_xml(title, summary, details, extra, pubdate)
+        print("Updated wagga.xml with new MLA report")
