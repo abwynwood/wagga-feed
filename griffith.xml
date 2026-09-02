@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Griffith Sheep Sale Report</title>
+    <link>https://agoralivestock.com.au/griffith-sheep-sale-report</link>
+    <description>Latest Griffith sheep saleyard market report</description>
+
+    <item>
+      <title>Griffith Sheep Sale – {{date}}</title>
+      <description>
+        Total yarding: {{yarding}}
+        Price trends: {{trends}}
+        Top prices: {{top_prices}}
+        Commentary: {{commentary}}
+      </description>
+      <link>https://agoralivestock.com.au/griffith-sheep-sale-report</link>
+      <pubDate>{{pubdate}}</pubDate>
+    </item>
+
+  </channel>
+</rss>
