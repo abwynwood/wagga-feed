@@ -35,6 +35,9 @@ jobs:
     - name: Update Barley BAR1 Price
       run: python update_barley.py
 
+    - name: Update NSW Goat OTH Price
+      run: python update_goats.py
+
     - name: Commit and push changes
       run: |
         git config --global user.name "github-actions"
