@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>NSW Goat OTH Price</title>
+    <link>https://www.mla.com.au/prices-markets/market-reports/goat/over-the-hooks-goat-indicators/</link>
+    <description>Latest NSW Over-the-Hooks Goat Price</description>
+    <language>en-au</language>
+
+    <item>
+      <title>NSW Goat OTH Price</title>
+      <link>https://www.mla.com.au/prices-markets/market-reports/goat/over-the-hooks-goat-indicators/</link>
+      <guid>nsw-goat-oth-price</guid>
+      <pubDate>Thu, 01 Jan 1970 00:00:00 +0000</pubDate>
+      <description><![CDATA[
+        <p><strong>Price:</strong> Pending update</p>
+        <p><strong>Details:</strong> NSW Over-the-Hooks Goat Indicator from MLA Weekly Report.</p>
+      ]]></description>
+    </item>
+
+  </channel>
+</rss>
