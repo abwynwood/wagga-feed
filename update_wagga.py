@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import os
 
+# MLA Wagga cattle report (no Cloudflare, safe for GitHub Actions)
 URL = "https://www.mla.com.au/prices-markets/market-reports/cattle/wagga/"
 XML_FILE = "wagga.xml"
 
@@ -24,7 +25,6 @@ def fetch_report():
     lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li"))
              for ul in report_section.find_all("ul")]
 
-    # If MLA page is empty or placeholder, do not update
     if len(paragraphs) == 0:
         return None
 
@@ -33,7 +33,6 @@ def fetch_report():
     details = paragraphs[1] if len(paragraphs) > 1 else None
     extra = lists[0] if lists else None
 
-    # If all fields are empty, skip update
     if not summary and not details and not extra:
         return None
 
@@ -47,7 +46,10 @@ def update_xml(title, summary, details, extra, pubdate):
 <rss version="2.0">
   <channel>
     <title>Wagga Cattle Market Report</title>
-    <link>{URL}</link>
+
+    <!-- Stable MLA link so Dakboard never shows an error -->
+    <link>https://www.mla.com.au/prices-markets/market-reports/cattle/</link>
+
     <description>Automatically updated Wagga cattle market report (MLA source)</description>
     <language>en-au</language>
 
@@ -72,7 +74,6 @@ if __name__ == "__main__":
     result = fetch_report()
 
     if result is None:
-        # No new report → keep last week's XML
         print("No new MLA report available — keeping existing wagga.xml")
     else:
         title, summary, details, extra, pubdate = result
