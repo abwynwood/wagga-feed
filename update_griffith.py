@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import os
 
-# MLA Griffith sheep report (no Cloudflare)
+# MLA Griffith sheep/lamb report
 URL = "https://www.mla.com.au/prices-markets/market-reports/sheep/griffith/"
 XML_FILE = "griffith.xml"
 
@@ -16,7 +16,7 @@ def fetch_report():
     page = requests.get(URL, headers=headers)
     soup = BeautifulSoup(page.content, "html.parser")
 
-    # MLA uses the same structure for sheep reports as cattle
+    # MLA uses the same structure for sheep/lamb reports
     report_section = soup.find("div", class_="market-report")
 
     # If MLA hasn't published a new report yet → skip update
@@ -52,7 +52,7 @@ def update_xml(title, summary, details, extra, pubdate):
   <channel>
     <title>Griffith Sheep Sale Report</title>
 
-    <!-- Stable MLA sheep reports index -->
+    <!-- Stable MLA sheep index (never 404) -->
     <link>https://www.mla.com.au/prices-markets/market-reports/sheep/</link>
 
     <description>Automatically updated Griffith sheep sale report (MLA source)</description>
