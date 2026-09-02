@@ -14,10 +14,12 @@ def fetch_report():
     page = requests.get(URL, headers=headers)
     soup = BeautifulSoup(page.content, "html.parser")
 
-    paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
+    # Collect text blocks
     headers_text = [h.get_text(strip=True) for h in soup.find_all(["h1", "h2", "h3"])]
+    paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
     lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li")) for ul in soup.find_all("ul")]
 
+    # Assign best guesses
     date = headers_text[0] if headers_text else "Date unavailable"
     yarding = paragraphs[0] if paragraphs else "Yarding unavailable"
     trends = paragraphs[1] if len(paragraphs) > 1 else "Trends unavailable"
