@@ -6,14 +6,19 @@ URL = "https://www.beefcentral.com/markets/wagga/"
 XML_FILE = "wagga.xml"
 
 def fetch_report():
-    # Full browser headers so Cloudflare allows GitHub Actions
+    # Full Chrome browser headers so Cloudflare allows GitHub Actions
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
         "Referer": "https://www.google.com/",
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
     }
 
     page = requests.get(URL, headers=headers)
