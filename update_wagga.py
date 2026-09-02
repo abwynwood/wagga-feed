@@ -6,6 +6,7 @@ URL = "https://www.beefcentral.com/markets/wagga/"
 XML_FILE = "wagga.xml"
 
 def fetch_report():
+    # Pretend to be a real browser so Beef Central doesn't block us
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9",
@@ -14,12 +15,12 @@ def fetch_report():
     page = requests.get(URL, headers=headers)
     soup = BeautifulSoup(page.content, "html.parser")
 
-    # Collect text blocks
+    # Collect text blocks from the page
     headers_text = [h.get_text(strip=True) for h in soup.find_all(["h1", "h2", "h3"])]
     paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
     lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li")) for ul in soup.find_all("ul")]
 
-    # Assign best guesses
+    # Assign best guesses based on page structure
     title = headers_text[0] if headers_text else "Wagga Cattle Market Report"
     summary = paragraphs[0] if paragraphs else "Summary unavailable"
     details = paragraphs[1] if len(paragraphs) > 1 else "Details unavailable"
