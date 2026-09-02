@@ -1,62 +1,61 @@
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
 
 URL = "https://www.beefcentral.com/markets/wagga/"
+XML_FILE = "wagga.xml"
 
-def fetch_latest_report():
-    page = requests.get(URL)
+def fetch_report():
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    page = requests.get(URL, headers=headers)
     soup = BeautifulSoup(page.content, "html.parser")
 
-    # Beef Central now uses <div class="post"> inside <div class="post-list">
-    article = soup.find("div", class_="post")
+    # Collect text blocks
+    headers_text = [h.get_text(strip=True) for h in soup.find_all(["h1", "h2", "h3"])]
+    paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
+    lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li")) for ul in soup.find_all("ul")]
 
-    if not article:
-        return ("Wagga market report unavailable",
-                URL,
-                "No report found on Beef Central.",
-                "Yarding unavailable")
+    # Assign best guesses
+    title = headers_text[0] if headers_text else "Wagga Cattle Market Report"
+    summary = paragraphs[0] if paragraphs else "Summary unavailable"
+    details = paragraphs[1] if len(paragraphs) > 1 else "Details unavailable"
+    extra = lists[0] if lists else "Additional info unavailable"
 
-    # Title is now inside <h3> not <h2>
-    title_tag = article.find(["h2", "h3"])
-    title = title_tag.get_text(strip=True) if title_tag else "Wagga market report"
+    pubdate = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
 
-    # Link is inside the first <a>
-    link_tag = article.find("a")
-    link = link_tag["href"] if link_tag else URL
-
-    # Summary is inside the first <p>
-    summary_tag = article.find("p")
-    summary = summary_tag.get_text(strip=True) if summary_tag else "Summary unavailable."
-
-    yarding = "Yarding data unavailable"
-
-    return title, link, summary, yarding
+    return title, summary, details, extra, pubdate
 
 
-def build_rss(title, link, summary, yarding):
-    rss = f"""<?xml version="1.0" encoding="UTF-8"?>
+def update_xml(title, summary, details, extra, pubdate):
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Wagga Livestock Market Reports – Beef Central</title>
+    <title>Wagga Cattle Market Report</title>
     <link>{URL}</link>
-    <description>Automatically updated feed of Wagga saleyard reports</description>
+    <description>Automatically updated Wagga cattle market report</description>
     <language>en-au</language>
 
     <item>
       <title>{title}</title>
-      <link>{link}</link>
-      <description>{summary}</description>
+      <pubDate>{pubdate}</pubDate>
+      <description><![CDATA[
+        <strong>Summary:</strong> {summary}<br><br>
+        <strong>Details:</strong> {details}<br><br>
+        <strong>Extra:</strong> {extra}
+      ]]></description>
     </item>
 
   </channel>
 </rss>
 """
-    return rss
+    with open(XML_FILE, "w", encoding="utf-8") as f:
+        f.write(xml)
 
 
 if __name__ == "__main__":
-    title, link, summary, yarding = fetch_latest_report()
-    rss = build_rss(title, link, summary, yarding)
-
-    with open("wagga.xml", "w", encoding="utf-8") as f:
-        f.write(rss)
+    title, summary, details, extra, pubdate = fetch_report()
+    update_xml(title, summary, details, extra, pubdate)
