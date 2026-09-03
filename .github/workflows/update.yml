@@ -2,7 +2,7 @@ name: Update Livestock and Grain Feeds
 
 on:
   schedule:
-    - cron: "0 * * * *"   # Runs every hour
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -23,9 +23,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4
 
-    - name: Update Wagga Sheep Report
-      run: python update_wagga.py
-
     - name: Update Griffith Sheep Report
       run: python update_griffith.py
 
@@ -37,6 +34,9 @@ jobs:
 
     - name: Update NSW Goat OTH Price
       run: python update_goats.py
+
+    - name: Update Wagga Cattle Averages
+      run: python update_wagga_cattle.py
 
     - name: Commit and push changes
       run: |
