@@ -25,10 +25,10 @@ def fetch_wagga_averages():
         category = cells[0].get_text(strip=True).lower()
         price = cells[1].get_text(strip=True)
 
-        if "processor cow" in category:
+        if "processor" in category and "cow" in category:
             processor_cows = price
 
-        if "young cattle" in category:
+        if "young" in category and "cattle" in category:
             young_cattle = price
 
     return processor_cows, young_cattle
@@ -43,7 +43,7 @@ def update_xml(processor, young):
   <channel>
     <title>Wagga Cattle Averages</title>
     <link>{URL}</link>
-    <description>Weekly Wagga Processor Cow & Young Cattle Averages</description>
+    <description>Weekly Wagga Processor Cow &amp; Young Cattle Averages</description>
     <language>en-au</language>
 
     <item>
@@ -68,6 +68,7 @@ def update_xml(processor, young):
 
   </channel>
 </rss>""")
+
 
 if __name__ == "__main__":
     processor, young = fetch_wagga_averages()
