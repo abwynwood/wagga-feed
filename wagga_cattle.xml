@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Wagga Cattle Averages</title>
+    <link>https://www.mla.com.au/prices-markets/market-reports/cattle/wagga/</link>
+    <description>Weekly Wagga Processor Cow & Young Cattle Averages</description>
+    <language>en-au</language>
+
+    <item>
+      <title>Processor Cow Average</title>
+      <link>https://www.mla.com.au/prices-markets/market-reports/cattle/wagga/</link>
+      <guid>wagga-processor-cow</guid>
+      <pubDate>Thu, 01 Jan 1970 00:00:00 +0000</pubDate>
+      <description><![CDATA[
+        <p><strong>Average Price:</strong> Pending update</p>
+      ]]></description>
+    </item>
+
+    <item>
+      <title>Young Cattle Average</title>
+      <link>https://www.mla.com.au/prices-markets/market-reports/cattle/wagga/</link>
+      <guid>wagga-young-cattle</guid>
+      <pubDate>Thu, 01 Jan 1970 00:00:00 +0000</pubDate>
+      <description><![CDATA[
+        <p><strong>Average Price:</strong> Pending update</p>
+      ]]></description>
+    </item>
+
+  </channel>
+</rss>
