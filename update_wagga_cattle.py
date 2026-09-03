@@ -8,7 +8,6 @@ def fetch_wagga_averages():
     response = requests.get(URL)
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Find the table containing category averages
     table = soup.find("table")
     if not table:
         return None, None
@@ -16,7 +15,6 @@ def fetch_wagga_averages():
     processor_cows = None
     young_cattle = None
 
-    # Loop through rows to find the categories we want
     for row in table.find_all("tr"):
         cells = row.find_all("td")
         if len(cells) < 2:
@@ -43,6 +41,12 @@ def fetch_wagga_averages():
 
 def update_xml(processor, young):
     xml_path = "wagga_cattle.xml"
+
+    # Always show both headings
+    if not processor:
+        processor = "Pending update"
+    if not young:
+        young = "Pending update"
 
     with open(xml_path, "w", encoding="utf-8") as f:
         f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -79,5 +83,4 @@ def update_xml(processor, young):
 
 if __name__ == "__main__":
     processor, young = fetch_wagga_averages()
-    if processor and young:
-        update_xml(processor, young)
+    update_xml(processor, young)
