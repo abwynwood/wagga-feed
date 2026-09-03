@@ -25,10 +25,17 @@ def fetch_wagga_averages():
         category = cells[0].get_text(strip=True).lower()
         price = cells[1].get_text(strip=True)
 
+        # Processor cows
         if "processor" in category and "cow" in category:
             processor_cows = price
 
-        if "young" in category and "cattle" in category:
+        # Young cattle — bulletproof selector
+        if (
+            ("young" in category)
+            or ("yearling" in category)
+            or ("yc" in category)
+            or ("veal" in category)
+        ) and ("cattle" in category):
             young_cattle = price
 
     return processor_cows, young_cattle
