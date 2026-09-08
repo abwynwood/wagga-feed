@@ -13,7 +13,6 @@ def fetch_hillston_bar1():
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Find the Hillston section
     hillston_section = soup.find("h3", string="Hillston")
     if not hillston_section:
         return "N/A"
@@ -37,12 +36,15 @@ def fetch_hillston_bar1():
 
 def write_xml(price):
     xml_content = f"""<?xml version="1.0"?>
-<items>
-  <item>
+<rss version="2.0">
+  <channel>
     <title>Hillston BAR1</title>
-    <price>{price}</price>
-  </item>
-</items>
+    <item>
+      <title>Hillston BAR1</title>
+      <description>{price}</description>
+    </item>
+  </channel>
+</rss>
 """
     with open(OUTPUT_FILE, "w") as f:
         f.write(xml_content)
