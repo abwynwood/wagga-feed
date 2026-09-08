@@ -1,7 +1,10 @@
 <?xml version="1.0"?>
-<items>
-  <item>
+<rss version="2.0">
+  <channel>
     <title>Hillston BAR1</title>
-    <price>N/A</price>
-  </item>
-</items>
+    <item>
+      <title>Hillston BAR1</title>
+      <description>N/A</description>
+    </item>
+  </channel>
+</rss>
