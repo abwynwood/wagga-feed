@@ -8,13 +8,11 @@ def fetch_hillston_apw1():
     try:
         response = requests.get(URL, timeout=20)
         response.raise_for_status()
-    except Exception as e:
-        apw1_price = "N/A"
-        return apw1_price
+    except Exception:
+        return "N/A"
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Find the Hillston section
     hillston_section = soup.find("h3", string="Hillston")
     if not hillston_section:
         return "N/A"
@@ -38,12 +36,15 @@ def fetch_hillston_apw1():
 
 def write_xml(price):
     xml_content = f"""<?xml version="1.0"?>
-<items>
-  <item>
+<rss version="2.0">
+  <channel>
     <title>Hillston APW1</title>
-    <price>{price}</price>
-  </item>
-</items>
+    <item>
+      <title>Hillston APW1</title>
+      <description>{price}</description>
+    </item>
+  </channel>
+</rss>
 """
     with open(OUTPUT_FILE, "w") as f:
         f.write(xml_content)
