@@ -26,11 +26,11 @@ jobs:
     - name: Update Griffith Sheep Report
       run: python update_griffith.py
 
-    - name: Update Wheat APW1 Price
-      run: python update_wheat.py
+    - name: Update Hillston APW1 (GrainFlow)
+      run: python hillston_apw1.py
 
-    - name: Update Barley BAR1 Price
-      run: python update_barley.py
+    - name: Update Hillston BAR1 (GrainFlow)
+      run: python hillston_bar1.py
 
     - name: Update NSW Goat OTH Price
       run: python update_goats.py
