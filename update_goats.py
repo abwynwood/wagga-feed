@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+import os
 
 URL = "https://www.mla.com.au/prices-markets/market-reports/goat/over-the-hooks-goat-indicators/"
 
@@ -9,7 +10,6 @@ def fetch_goat_price():
     soup = BeautifulSoup(response.text, "html.parser")
 
     # Find the NSW OTH Goat row
-    # MLA tables usually have NSW in the first column
     nsw_row = soup.find("td", string=lambda x: x and "NSW" in x)
     if not nsw_row:
         return None
@@ -33,13 +33,13 @@ def update_xml(price):
 <rss version="2.0">
   <channel>
     <title>NSW Goat OTH Price</title>
-    <link>https://www.mla.com.au/prices-markets/market-reports/goat/over-the-hooks-goat-indicators/</link>
+    <link>{URL}</link>
     <description>Latest NSW Over-the-Hooks Goat Price</description>
     <language>en-au</language>
 
     <item>
       <title>NSW Goat OTH Price</title>
-      <link>https://www.mla.com.au/prices-markets/market-reports/goat/over-the-hooks-goat-indicators/</link>
+      <link>{URL}</link>
       <guid>nsw-goat-oth-price</guid>
       <pubDate>{datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
       <description><![CDATA[
@@ -53,5 +53,10 @@ def update_xml(price):
 
 if __name__ == "__main__":
     price = fetch_goat_price()
-    if price:
-        update_xml(price)
+
+    # ⭐ KEEP LAST KNOWN PRICE LOGIC ⭐
+    if price in ["N/A", "Pending", None, ""]:
+        print("No new goat data — keeping last known price.")
+        exit(0)
+
+    update_xml(price)
