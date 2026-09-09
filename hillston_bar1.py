@@ -1,5 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
+import os
 
 URL = "https://www.grainflow.com.au/daily-prices"
 OUTPUT_FILE = "hillston_bar1.xml"
@@ -9,21 +11,22 @@ def fetch_hillston_bar1():
         response = requests.get(URL, timeout=20)
         response.raise_for_status()
     except Exception:
-        return "N/A"
+        return None
 
     soup = BeautifulSoup(response.text, "html.parser")
 
+    # Find the Hillston section
     hillston_section = soup.find("h3", string="Hillston")
     if not hillston_section:
-        return "N/A"
+        return None
 
     table = hillston_section.find_next("table")
     if not table:
-        return "N/A"
+        return None
 
     rows = table.find_all("tr")
 
-    bar1_price = "N/A"
+    bar1_price = None
 
     for row in rows:
         cells = [c.get_text(strip=True) for c in row.find_all("td")]
@@ -36,15 +39,12 @@ def fetch_hillston_bar1():
 
 def write_xml(price):
     xml_content = f"""<?xml version="1.0"?>
-<rss version="2.0">
-  <channel>
+<items>
+  <item>
     <title>Hillston BAR1</title>
-    <item>
-      <title>Hillston BAR1</title>
-      <description>{price}</description>
-    </item>
-  </channel>
-</rss>
+    <price>{price}</price>
+  </item>
+</items>
 """
     with open(OUTPUT_FILE, "w") as f:
         f.write(xml_content)
@@ -52,4 +52,10 @@ def write_xml(price):
 
 if __name__ == "__main__":
     price = fetch_hillston_bar1()
+
+    # ⭐ KEEP LAST KNOWN PRICE LOGIC ⭐
+    if price in ["N/A", "Pending", None, ""]:
+        print("No new Hillston BAR1 data — keeping last known price.")
+        exit(0)
+
     write_xml(price)
