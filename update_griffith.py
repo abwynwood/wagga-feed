@@ -1,85 +1,56 @@
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+import os
 
-# MLA Griffith sheep/lamb report page
-URL = "https://www.mla.com.au/prices-markets/market-reports/sheep/griffith/"
-XML_FILE = "griffith.xml"
+URL = "https://www.lls.nsw.gov.au/regions/riverina/livestock-markets/griffith-saleyards"
 
-def fetch_report():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
+def fetch_sheep_report():
+    response = requests.get(URL)
+    soup = BeautifulSoup(response.text, "html.parser")
 
-    page = requests.get(URL, headers=headers)
-    soup = BeautifulSoup(page.content, "html.parser")
-
-    # MLA uses this container for all market reports
-    report_section = soup.find("div", class_="market-report")
-
-    # If MLA hasn't published a new report yet → skip update
+    # Find the Griffith sheep report text
+    report_section = soup.find("div", class_="rich-text")
     if not report_section:
         return None
 
-    # Extract paragraphs and lists
-    paragraphs = [p.get_text(strip=True) for p in report_section.find_all("p")]
-    lists = ["; ".join(li.get_text(strip=True) for li in ul.find_all("li"))
-             for ul in report_section.find_all("ul")]
-
-    # If MLA page is empty → skip update
-    if len(paragraphs) == 0:
+    text = report_section.get_text(strip=True)
+    if not text:
         return None
 
-    title = "Griffith Sheep Sale Report"
-    summary = paragraphs[0] if paragraphs else None
-    details = paragraphs[1] if len(paragraphs) > 1 else None
-    extra = lists[0] if lists else None
+    return text
 
-    # If all fields are empty → skip update
-    if not summary and not details and not extra:
-        return None
+def update_xml(report):
+    xml_path = "griffith.xml"
 
-    pubdate = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0000")
-
-    return title, summary, details, extra, pubdate
-
-
-def update_xml(title, summary, details, extra, pubdate):
-    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    with open(xml_path, "w", encoding="utf-8") as f:
+        f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Griffith Sheep Sale Report</title>
-
-    <!-- Stable MLA sheep index (never 404) -->
-    <link>https://www.mla.com.au/prices-markets/market-reports/sheep/</link>
-
-    <description>Automatically updated Griffith sheep sale report (MLA source)</description>
+    <title>Griffith Sheep Report</title>
+    <link>{URL}</link>
+    <description>Latest Griffith Sheep Market Report</description>
     <language>en-au</language>
 
     <item>
-      <title>{title}</title>
-      <pubDate>{pubdate}</pubDate>
+      <title>Griffith Sheep Report</title>
+      <link>{URL}</link>
+      <guid>griffith-sheep-report</guid>
+      <pubDate>{datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
       <description><![CDATA[
-        <strong>Summary:</strong> {summary}<br><br>
-        <strong>Details:</strong> {details}<br><br>
-        <strong>Extra:</strong> {extra}
+        {report}
       ]]></description>
     </item>
 
   </channel>
-</rss>
-"""
-    with open(XML_FILE, "w", encoding="utf-8") as f:
-        f.write(xml)
-
+</rss>""")
 
 if __name__ == "__main__":
-    result = fetch_report()
+    report = fetch_sheep_report()
 
-    if result is None:
-        print("No new MLA Griffith sheep report — keeping existing griffith.xml")
-    else:
-        title, summary, details, extra, pubdate = result
-        update_xml(title, summary, details, extra, pubdate)
-        print("Updated griffith.xml with new MLA report")
+    # ⭐ KEEP LAST KNOWN PRICE LOGIC ⭐
+    if report in ["N/A", "Pending", None, ""]:
+        print("No new sheep report — keeping last known data.")
+        exit(0)
+
+    update_xml(report)
