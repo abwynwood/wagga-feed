@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+from datetime import datetime
 
 URL = "https://www.grainflow.com.au/daily-prices"
 OUTPUT_FILE = "westwyalong_apw1.xml"
@@ -9,21 +10,22 @@ def fetch_westwyalong_apw1():
         response = requests.get(URL, timeout=20)
         response.raise_for_status()
     except Exception:
-        return "N/A"
+        return None
 
     soup = BeautifulSoup(response.text, "html.parser")
 
+    # Find the West Wyalong section
     ww_section = soup.find("h3", string="West Wyalong")
     if not ww_section:
-        return "N/A"
+        return None
 
     table = ww_section.find_next("table")
     if not table:
-        return "N/A"
+        return None
 
     rows = table.find_all("tr")
 
-    apw1_price = "N/A"
+    apw1_price = None
 
     for row in rows:
         cells = [c.get_text(strip=True) for c in row.find_all("td")]
@@ -36,15 +38,12 @@ def fetch_westwyalong_apw1():
 
 def write_xml(price):
     xml_content = f"""<?xml version="1.0"?>
-<rss version="2.0">
-  <channel>
+<items>
+  <item>
     <title>West Wyalong APW1</title>
-    <item>
-      <title>West Wyalong APW1</title>
-      <description>{price}</description>
-    </item>
-  </channel>
-</rss>
+    <price>{price}</price>
+  </item>
+</items>
 """
     with open(OUTPUT_FILE, "w") as f:
         f.write(xml_content)
@@ -52,4 +51,10 @@ def write_xml(price):
 
 if __name__ == "__main__":
     price = fetch_westwyalong_apw1()
+
+    # ⭐ KEEP LAST KNOWN PRICE LOGIC ⭐
+    if price in ["N/A", "Pending", None, ""]:
+        print("No new West Wyalong APW1 data — keeping last known price.")
+        exit(0)
+
     write_xml(price)
