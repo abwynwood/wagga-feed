@@ -32,6 +32,12 @@ jobs:
     - name: Update Hillston BAR1 (GrainFlow)
       run: python hillston_bar1.py
 
+    - name: Update West Wyalong APW1 (GrainFlow)
+      run: python westwyalong_apw1.py
+
+    - name: Update West Wyalong BAR1 (GrainFlow)
+      run: python westwyalong_bar1.py
+
     - name: Update NSW Goat OTH Price
       run: python update_goats.py
 
