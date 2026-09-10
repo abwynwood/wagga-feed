@@ -132,7 +132,15 @@ def main():
     ET.SubElement(item, "description").text = description
     ET.SubElement(item, "pubDate").text = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
     ET.SubElement(item, "guid").text = SOURCE_URL
+
+    # DAKboard's RSS renderer collapses ordinary newlines, so use HTML breaks.
     ET.ElementTree(root).write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
+    xml = OUTPUT_FILE.read_text(encoding="utf-8")
+    xml = xml.replace(
+        "<description>" + description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</description>",
+        "<description><![CDATA[" + description.replace("\n", "<br>") + "]]></description>",
+    )
+    OUTPUT_FILE.write_text(xml, encoding="utf-8")
 
 if __name__ == "__main__":
     try:
