@@ -1,23 +1,10 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-  <channel>
-    <title>Griffith Sheep Sale Report</title>
+<?xml version='1.0' encoding='utf-8'?>
+<rss version="2.0"><channel><title>Griffith Sheep Sale</title><link>https://agoralivestock.com.au/saleyard-griffith-sheep/</link><item><title>Griffith Sheep Sale — 4th September 2026</title><description>GRIFFITH SHEEP SALE — 4th September 2026
 
-    <!-- Stable MLA sheep index (never 404) -->
-    <link>https://www.mla.com.au/prices-markets/market-reports/sheep/</link>
+Light Lambs: $236/hd – $295/hd
+Trade/Heavy Lambs: $236/hd – $295/hd
+Mutton: $288/hd – $288/hd
 
-    <description>Automatically updated Griffith sheep sale report (MLA source)</description>
-    <language>en-au</language>
-
-    <item>
-      <title>Griffith Sheep Sale Report</title>
-      <pubDate>Wed, 02 Sep 2026 00:00:00 +0000</pubDate>
-      <description><![CDATA[
-        <strong>Summary:</strong> Summary unavailable<br><br>
-        <strong>Details:</strong> Details unavailable<br><br>
-        <strong>Extra:</strong> Additional info unavailable
-      ]]></description>
-    </item>
-
-  </channel>
-</rss>
+Yarding: 17,900 head
+Market: FIRM
+Summary: Market sold to a stronger trend.</description><pubDate>Thu, 10 Sep 2026 02:17:17 +0000</pubDate><guid>https://agoralivestock.com.au/saleyard-griffith-sheep/</guid></item></channel></rss>
