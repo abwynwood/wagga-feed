@@ -62,6 +62,30 @@ def main():
     if top and low:
         mutton = "$%s/hd – $%s/hd" % (f"{int(low.group(1).replace(',', '')):,}", f"{int(top.group(1).replace(',', '')):,}")
 
+    # Agora's Griffith page can lag behind the latest market-summary page.
+    # If the sale commentary does not expose category prices, use the matching
+    # Agora sheep market summary as a fallback.
+    heavy_lambs = find(r"heavy lambs reached \\$([\\d,]+)/head", text)
+    crossbred_ewes = find(r"crossbred ewes reached \\$([\\d,]+)/head", text)
+    if not heavy_lambs or not crossbred_ewes:
+        try:
+            raw_date = date_match.group(1)
+            clean_date = re.sub(r"(st|nd|rd|th)", "", raw_date)
+            dt = datetime.strptime(clean_date, "%d %B %Y")
+            slug = dt.strftime("%-d-%B-%Y").lower()
+            summary_url = f"https://agoralivestock.com.au/sheep-market-summary-{slug}/"
+            summary_response = requests.get(summary_url, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
+            if summary_response.ok:
+                summary_soup = BeautifulSoup(summary_response.text, "html.parser")
+                summary_text = re.sub(r"\\s+", " ", html.unescape(summary_soup.get_text(" ", strip=True))).strip()
+                heavy_lambs = heavy_lambs or find(r"heavy lambs reached \\$([\\d,]+)/head", summary_text)
+                crossbred_ewes = crossbred_ewes or find(r"crossbred ewes reached \\$([\\d,]+)/head", summary_text)
+        except Exception:
+            pass
+
+    heavy_lambs_value = f"$%s/hd" % f"{int(heavy_lambs.group(1).replace(',', '')):,}" if heavy_lambs else "Not reported"
+    crossbred_ewes_value = f"$%s/hd" % f"{int(crossbred_ewes.group(1).replace(',', '')):,}" if crossbred_ewes else "Not reported"
+
     market = market_direction(text)
     summary = {"FIRM": "Prices firm to stronger.", "SOFTER": "Prices softer across the market.", "STEADY": "Prices mostly steady."}[market]
 
@@ -73,9 +97,8 @@ def main():
     ET.SubElement(item, "title").text = "Griffith Sheep Sale — " + date_match.group(1)
     description = "\n".join([
         "GRIFFITH SHEEP SALE — " + date_match.group(1), "",
-        "Light Lambs: " + light_lambs,
-        "Trade Lambs: " + trade_lambs,
-        "Mutton: " + mutton, "",
+        "Heavy Lambs Top: " + heavy_lambs_value,
+        "Crossbred Ewes Top: " + crossbred_ewes_value, "",
         "Yarding: " + yarding_match.group(1) + " head",
         "Market: " + market,
         "Summary: " + summary,
