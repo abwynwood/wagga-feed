@@ -7,8 +7,6 @@ SHEETS = {
     "BARLEY": "https://docs.google.com/spreadsheets/d/e/2PACX-1vQeq8k64o3LvQpnOkUv2IoYIhLO_-qJrTIvnfzwJBhsBS67m6bzzEjaYt6XMwjk0ruerIceTRVCls46/pub?gid=0&single=true&output=csv",
 }
 
-TARGETS = ("hillston", "west wyalong", "apw1", "bar1")
-
 
 def main():
     for name, url in SHEETS.items():
@@ -19,23 +17,10 @@ def main():
         text = response.content.decode("utf-8-sig", errors="replace")
         rows = list(csv.reader(io.StringIO(text)))
         print(f"Rows: {len(rows)}")
-
-        matches = []
-        for row in rows:
-            joined = " | ".join(cell.strip() for cell in row)
-            lower = joined.lower()
-            if any(target in lower for target in TARGETS):
-                matches.append(joined)
-
-        if matches:
-            print("Target matches:")
-            for row in matches:
-                print(row)
-        else:
-            print("No Hillston / West Wyalong / APW1 / BAR1 text found.")
-            print("First 15 rows:")
-            for row in rows[:15]:
-                print(" | ".join(cell.strip() for cell in row))
+        print("--- FULL SHEET ---")
+        for i, row in enumerate(rows, 1):
+            print(f"{i}: " + " | ".join(cell.strip() for cell in row))
+        print("--- END SHEET ---")
 
 
 if __name__ == "__main__":
