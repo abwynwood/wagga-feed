@@ -85,7 +85,6 @@ def fetch_all_bids():
 
 
 def row_value(row, aliases):
-    """Return a value using case/underscore-independent field names."""
     wanted = {normalise(alias) for alias in aliases}
     for key, value in row.items():
         if normalise(key) in wanted:
@@ -117,9 +116,6 @@ def grade_matches(value, grade):
 
 
 def location_or_site_matches(row, location, site_no):
-    # CropConnect's browser payload may use different field names than the
-    # public OData service. Check the common explicit fields first, then the
-    # whole row text for the known location/site number.
     explicit = row_value(row, ("SiteNo", "Site", "SiteID", "SiteNumber", "Location", "SiteName"))
     if explicit is not None:
         value = normalise(explicit)
@@ -139,7 +135,6 @@ def find_bids(rows, site_map, season):
                 continue
             grade_value = row_value(row, ("Grade", "GradeCode", "CommodityGrade", "ProductGrade"))
             if not grade_matches(grade_value, grade):
-                # Some UI payloads expose grade inside a combined text field.
                 if normalise(grade) not in normalise(row_values_text(row)):
                     continue
             season_value = row_value(row, ("SeasonYear", "Season", "SeasonYr", "SeasonCode", "CropYear"))
@@ -156,15 +151,24 @@ def find_bids(rows, site_map, season):
 
 def browser_fallback(season, site_map):
     payloads = []
+    json_urls = []
+    all_urls = []
+    page_text = ""
+    frame_urls = []
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
 
             def capture(response):
+                url = response.url
+                if "cropconnect.com.au" in url and url not in all_urls:
+                    all_urls.append(url)
                 content_type = response.headers.get("content-type", "")
                 if "json" not in content_type:
                     return
+                if url not in json_urls:
+                    json_urls.append(url)
                 try:
                     payloads.append(response.json())
                 except Exception:
@@ -173,15 +177,29 @@ def browser_fallback(season, site_map):
             page.on("response", capture)
             page.goto(MARKET_URL, wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(15000)
+            frame_urls = [frame.url for frame in page.frames]
+            try:
+                page_text = page.locator("body").inner_text(timeout=5000)
+            except Exception:
+                pass
             browser.close()
     except Exception as exc:
         print(f"CropConnect browser fallback failed: {exc}")
         return {}
 
+    print(f"CropConnect browser fallback: JSON payloads={len(payloads)}, rows={sum(len(as_rows(p)) for p in payloads)}")
+    print(f"CropConnect browser network: json_urls={json_urls[:30]}")
+    print(f"CropConnect browser network: frame_urls={frame_urls[:20]}")
+    if all_urls:
+        interesting = [u for u in all_urls if any(x in u.lower() for x in ("bid", "market", "odata", "api"))]
+        print(f"CropConnect browser network: interesting_urls={interesting[:50]}")
+    if page_text:
+        compact_text = re.sub(r"\s+", " ", page_text).strip()
+        print(f"CropConnect browser text sample: {compact_text[:3000]}")
+
     rows = []
     for payload in payloads:
         rows.extend(as_rows(payload))
-    print(f"CropConnect browser fallback: JSON payloads={len(payloads)}, rows={len(rows)}")
     if rows:
         print(f"CropConnect browser sample keys: {sorted(rows[0].keys())}")
         for location in ("Hillston", "Condobolin"):
