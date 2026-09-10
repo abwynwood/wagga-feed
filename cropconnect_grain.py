@@ -64,8 +64,6 @@ def fetch_site_map():
 
 
 def fetch_all_bids():
-    # Try the public collection in a few forms because this SAP service is
-    # stricter than a normal OData implementation about query parameters.
     attempts = [
         (BID_URL, None),
         (BID_URL, {"$top": "5000"}),
@@ -166,7 +164,7 @@ def browser_fallback(season, site_map):
 def write_xml(target, output, season, filename):
     now = datetime.now(ZoneInfo("UTC"))
     pub_date = format_datetime(now, usegmt=True)
-    safe_guid = normalise(target).replace("condobolin", "condobolin-").replace("hillston", "hillston-")
+    slug = normalise(target)
     description = f"<strong>{target}</strong><br>{output}<br>Season {season}"
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -177,7 +175,7 @@ def write_xml(target, output, season, filename):
     <item>
       <title>{target}</title>
       <link>{MARKET_URL}</link>
-      <guid>{safe_guid}</guid>
+      <guid>{slug}</guid>
       <pubDate>{pub_date}</pubDate>
       <description><![CDATA[
         {description}
