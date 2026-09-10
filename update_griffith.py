@@ -43,45 +43,27 @@ def main():
         raise RuntimeError("Agora Griffith date/yarding not found")
 
     light_lambs = money_range([
-        r"Restockers paid from \$([\d,]+) to \$([\d,]+)/head",
-        r"Restockers paid from \$([\d,]+) to \$([\d,]+)/hd",
+        r"Restockers paid from \\$([\\d,]+) to \\$([\\d,]+)/head",
+        r"Restockers paid from \\$([\\d,]+) to \\$([\\d,]+)/hd",
     ], text)
 
     if light_lambs == "Not reported":
-        restocker_top = find(r"store lambs? to \d+kg sold to \$([\d,]+)/head", text)
-        if restocker_top:
-            light_lambs = f"${int(restocker_top.group(1).replace(",", "")):,}/hd"
+        light_lambs = money_range([
+            r"store lambs?[^.]{0,160}?from \\$([\\d,]+) to \\$([\\d,]+)/head",
+        ], text)
 
     trade_lambs = money_range([
-        r"trade to heavy lambs in a range of \$([\d,]+) to \$([\d,]+)/head",
-        r"trade lambs?[^.]{0,100}?range of \$([\d,]+) to \$([\d,]+)/head",
+        r"trade to heavy lambs in a range of \\$([\\d,]+) to \\$([\\d,]+)/head",
+        r"fresh medium to heavy trades?[^.]{0,120}?from \\$([\\d,]+) to \\$([\\d,]+)/head",
+        r"trade lambs?[^.]{0,100}?range of \\$([\\d,]+) to \\$([\\d,]+)/head",
     ], text)
 
+    # Use the broad mutton range, rather than unrelated ewe top prices.
     mutton = money_range([
-        r"mutton[^.]{0,350}?from \$([\d,]+) to \$([\d,]+)/head",
-        r"lighter and odd clean-up penlots from \$([\d,]+) to \$([\d,]+)/head",
-        r"most sheep with frame and condition from \$([\d,]+) to \$([\d,]+)/head",
+        r"most sheep with frame and condition from \\$([\\d,]+) to \\$([\\d,]+)/head",
+        r"mutton[^.]{0,350}?from \\$([\\d,]+) to \\$([\\d,]+)/head",
+        r"lighter and odd clean-up penlots from \\$([\\d,]+) to \\$([\\d,]+)/head",
     ], text)
-
-    # Current Griffith reports often give mutton as two top prices,
-    # e.g. crossbred ewes $365 and Merino ewes $288.
-    mutton_tops = re.findall(
-        r"(?:crossbred ewes|Merino ewes)[^$]{0,80}?\$([\d,]+)/head",
-        text,
-        re.IGNORECASE,
-    )
-    if mutton_tops:
-        values = sorted(int(v.replace(",", "")) for v in mutton_tops)
-        if len(values) >= 2:
-            mutton = f"${values[0]:,}/hd – ${values[-1]:,}/hd"
-        else:
-            mutton = f"${values[0]:,}/hd"
-
-    top = find(r"crossbred and Dorper ewes.*?top of \$([\d,]+)/head", text)
-    low = find(r"lighter and odd clean-up penlots from \$([\d,]+) to \$([\d,]+)/head", text)
-    if top and low:
-        mutton = "$%s/hd – $%s/hd" % (f"{int(low.group(1).replace(',', '')):,}", f"{int(top.group(1).replace(',', '')):,}")
-
     # Agora's Griffith page can lag behind the latest market-summary page.
     # If the sale commentary does not expose category prices, use the matching
     # Agora sheep market summary as a fallback.
@@ -121,10 +103,10 @@ def main():
     ET.SubElement(item, "title").text = "Griffith Sheep Sale — " + date_match.group(1)
     description = "\n".join([
         "GRIFFITH SHEEP SALE — " + date_match.group(1), "",
-        "Restocker Lambs Top: " + light_lambs,
+        "Restocker Lambs: " + light_lambs,
         "Trade Lambs: " + trade_lambs,
         "Heavy Lambs Top: " + heavy_lambs_value,
-        "Mutton Top: " + mutton,
+        "Mutton: " + mutton,
         "Yarding: " + yarding_match.group(1) + " head",
         "Market: " + market,
         "Summary: " + summary,
