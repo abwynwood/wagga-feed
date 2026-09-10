@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from email.utils import format_datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -21,8 +21,10 @@ TARGETS = {
 
 
 def current_season():
+    # CropConnect grain seasons run October to September. On 10 Sep 2026,
+    # for example, the current season is 25/26, not 26/27.
     now = datetime.now(ZoneInfo("Australia/Sydney"))
-    start = now.year if now.month >= 7 else now.year - 1
+    start = now.year - 1 if now.month < 10 else now.year
     return f"{str(start)[-2:]}/{str(start + 1)[-2:]}"
 
 
@@ -31,14 +33,23 @@ def normalise(value):
 
 
 def as_rows(payload):
-    if isinstance(payload, dict):
-        for key in ("d", "value", "results"):
-            value = payload.get(key)
-            if isinstance(value, dict) and "results" in value:
-                value = value["results"]
-            if isinstance(value, list):
-                return value
-    return []
+    """Extract row lists from OData/JSON responses, including nested payloads."""
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+
+    for key in ("d", "value", "results"):
+        value = payload.get(key)
+        if isinstance(value, dict) and "results" in value:
+            value = value["results"]
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+
+    rows = []
+    for value in payload.values():
+        rows.extend(as_rows(value))
+    return rows
 
 
 def get_json(url, params=None):
@@ -98,7 +109,7 @@ def season_matches(value, season):
     raw = str(value or "").strip().lower()
     compact = re.sub(r"[^0-9]", "", raw)
     wanted = re.sub(r"[^0-9]", "", season)
-    return raw == season.lower() or compact == wanted
+    return raw == season.lower() or compact == wanted or compact == f"20{wanted[:2]}20{wanted[2:]}"
 
 
 def grade_matches(value, grade):
@@ -162,7 +173,8 @@ def browser_fallback(season, site_map):
 
 
 def write_xml(target, output, season, filename):
-    now = datetime.now(ZoneInfo("UTC"))
+    # email.utils.format_datetime(usegmt=True) requires an actual UTC datetime.
+    now = datetime.now(timezone.utc)
     pub_date = format_datetime(now, usegmt=True)
     slug = normalise(target)
     description = f"<strong>{target}</strong><br>{output}<br>Season {season}"
