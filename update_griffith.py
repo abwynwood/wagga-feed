@@ -101,7 +101,10 @@ def main():
     ET.SubElement(item, "title").text = "Griffith Sheep Sale — " + date_match.group(1)
     description = "\n".join([
         "GRIFFITH SHEEP SALE — " + date_match.group(1), "",
+        "Restocker Lambs: " + light_lambs,
+        "Trade Lambs: " + trade_lambs,
         "Heavy Lambs Top: " + heavy_lambs_value,
+        "Mutton: " + mutton,
         "Crossbred Ewes Top: " + crossbred_ewes_value, "",
         "Yarding: " + yarding_match.group(1) + " head",
         "Market: " + market,
