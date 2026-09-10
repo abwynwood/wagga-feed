@@ -1,10 +1,19 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
     <title>Hillston BAR1</title>
+    <link>https://cropconnect.com.au/cc/market/bids</link>
+    <language>en-au</language>
     <item>
       <title>Hillston BAR1</title>
-      <description>N/A</description>
+      <link>https://cropconnect.com.au/cc/market/bids</link>
+      <guid>hillston-bar1</guid>
+      <pubDate>Thu, 10 Sep 2026 07:08:23 +0000</pubDate>
+      <description><![CDATA[
+        <strong>Hillston BAR1</strong><br>
+        Unavailable<br>
+        Season 25/26
+      ]]></description>
     </item>
   </channel>
 </rss>

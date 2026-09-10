@@ -1,10 +1,19 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
     <title>Condobolin APW1</title>
+    <link>https://cropconnect.com.au/cc/market/bids</link>
+    <language>en-au</language>
     <item>
       <title>Condobolin APW1</title>
-      <description>Unavailable</description>
+      <link>https://cropconnect.com.au/cc/market/bids</link>
+      <guid>condobolin-apw1</guid>
+      <pubDate>Thu, 10 Sep 2026 07:08:42 +0000</pubDate>
+      <description><![CDATA[
+        <strong>Condobolin APW1</strong><br>
+        Unavailable<br>
+        Season 25/26
+      ]]></description>
     </item>
   </channel>
 </rss>
