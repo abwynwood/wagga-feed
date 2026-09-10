@@ -67,7 +67,23 @@ def main():
     date_match = find(r"Report Date:\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})", text)
     yarding_match = find(r"Total Yarding:\s*([\d,]+)", text)
     if not date_match or not yarding_match:
+        # Do not publish a partial/new feed. The existing XML is retained by
+        # the workflow if this run fails, so the DAKboard keeps one complete
+        # sale's data and its matching date.
         raise RuntimeError("Agora Griffith date/yarding not found")
+
+    # Treat the whole sheep report as one atomic record. If Agora changes its
+    # page layout and we cannot even find the expected category headings, fail
+    # the update rather than mixing old prices with a new sale date.
+    category_markers = [
+        r"restockers+lambs?",
+        r"stores+lambs?",
+        r"trades+lambs?",
+        r"heavys+lambs?",
+        r"mutton",
+    ]
+    if sum(bool(find(pattern, text)) for pattern in category_markers) < 3:
+        raise RuntimeError("Agora Griffith sheep category headings not recognised; retaining previous complete sale")
 
     # Keep each sheep category isolated. Agora often puts several categories
     # in the same paragraph, so broad regexes can otherwise copy one category's
@@ -117,7 +133,8 @@ def main():
     )
 
     # Agora's Griffith page can lag behind the matching market-summary page.
-    # Use it as a fallback, but apply the same category boundaries.
+    # Use it only to fill fields for THIS SAME report date. We never carry an
+    # individual price forward from an older sale.
     try:
         raw_date = date_match.group(1)
         clean_date = re.sub(r"(st|nd|rd|th)", "", raw_date)
