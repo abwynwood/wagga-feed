@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
+import xml.etree.ElementTree as ET
 
 from playwright.sync_api import sync_playwright
 
@@ -68,6 +69,128 @@ def all_frame_text(page):
     return texts
 
 
+def parse_odata_response(response):
+    """Return OData entities from JSON or Atom/XML responses."""
+    content_type = (response.headers.get("content-type") or "").lower()
+    body = response.text()
+    if not body:
+        return []
+
+    if "json" in content_type or body.lstrip().startswith(("{", "[")):
+        data = json.loads(body)
+        if isinstance(data, dict):
+            d = data.get("d", data)
+            if isinstance(d, dict):
+                return d.get("results", [])
+            if isinstance(d, list):
+                return d
+        return data if isinstance(data, list) else []
+
+    # SAP OData commonly defaults to Atom/XML when JSON is not explicitly requested.
+    root = ET.fromstring(body)
+    entries = []
+    for entry in root.iter():
+        if entry.tag.rsplit("}", 1)[-1] != "entry":
+            continue
+        entity = {}
+        for child in entry.iter():
+            if child.tag.rsplit("}", 1)[-1] != "properties":
+                continue
+            for prop in list(child):
+                name = prop.tag.rsplit("}", 1)[-1]
+                entity[name] = prop.text
+        if entity:
+            entries.append(entity)
+    return entries
+
+
+def odata_get(page, path, params):
+    """Request OData with explicit JSON preference and XML fallback support."""
+    response = page.request.get(
+        f"{API_BASE}/{path}",
+        params=params,
+        headers={
+            "Accept": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": CROPCONNECT_URL,
+        },
+        timeout=60000,
+    )
+    if not response.ok:
+        raise RuntimeError(f"{path} returned HTTP {response.status}")
+    return response, parse_odata_response(response)
+
+
+def fetch_targeted_bids(page, season):
+    """Use CropConnect's public OData API directly for the four exact targets."""
+    diagnostics = []
+    site_response, sites = odata_get(
+        page,
+        "SITE_PUBLIC/Site",
+        {"$top": "2000", "$format": "json"},
+    )
+    diagnostics.append(
+        f"Site API HTTP={site_response.status}, type={site_response.headers.get('content-type', '')}, rows={len(sites)}"
+    )
+
+    site_map = {}
+    wanted = {loc.lower() for loc, _ in TARGETS}
+    for item in sites:
+        desc = normalise(
+            item.get("SiteDescr")
+            or item.get("SiteDescription")
+            or item.get("SiteName")
+            or item.get("Description")
+            or ""
+        )
+        if desc.lower() in wanted:
+            site_no = item.get("SiteNo") or item.get("Site") or item.get("SiteID")
+            if site_no:
+                site_map[desc.lower()] = str(site_no)
+
+    diagnostics.append(f"Site map: {site_map}")
+    bids = {}
+    code = season_code(season)
+
+    for location, grade in TARGETS:
+        site_no = site_map.get(location.lower())
+        if not site_no:
+            diagnostics.append(f"{location} {grade}: no matching site")
+            continue
+
+        filt = (
+            "(BidSustainable eq true) and (BidNonSustainable eq true) "
+            f"and (SeasonYear eq '{code}') and (Grade eq '{grade}') and (SiteNo eq '{site_no}')"
+        )
+        response, results = odata_get(
+            page,
+            "BID_PUBLIC/AllBidsSet",
+            {"$filter": filt, "$format": "json"},
+        )
+        diagnostics.append(
+            f"{location} {grade}: SiteNo={site_no}, HTTP={response.status}, type={response.headers.get('content-type', '')}, rows={len(results)}"
+        )
+
+        prices = []
+        for item in results:
+            try:
+                price = float(item.get("Price"))
+                if 100 <= price <= 2000:
+                    prices.append(price)
+            except (TypeError, ValueError):
+                pass
+
+        if prices:
+            bids[f"{location}|{grade}"] = max(prices)
+            diagnostics.append(f"{location} {grade}: highest={max(prices)}")
+        else:
+            diagnostics.append(f"{location} {grade}: bids=0")
+
+    for line in diagnostics:
+        print(f"CropConnect API: {line}")
+    return bids
+
+
 def price_from_matching_json(value, location, grade, season):
     found = []
     location_re = re.compile(rf"\b{re.escape(location)}\b", re.I)
@@ -94,64 +217,6 @@ def price_from_matching_json(value, location, grade, season):
 
     walk(value)
     return found
-
-
-def fetch_targeted_bids(page, season):
-    """Use CropConnect's public OData API directly for the four exact targets."""
-    site_response = page.request.get(
-        f"{API_BASE}/SITE_PUBLIC/Site?$top=2000",
-        timeout=60000,
-    )
-    if not site_response.ok:
-        raise RuntimeError(f"Site API returned HTTP {site_response.status}")
-    site_data = site_response.json()
-    sites = site_data.get("d", {}).get("results", [])
-    site_map = {}
-    for item in sites:
-        desc = normalise(item.get("SiteDescr", ""))
-        if desc.lower() in {loc.lower() for loc, _ in TARGETS}:
-            site_map[desc.lower()] = str(item.get("Site", ""))
-
-    bids = {}
-    diagnostics = []
-    code = season_code(season)
-    for location, grade in TARGETS:
-        site_no = site_map.get(location.lower())
-        if not site_no:
-            diagnostics.append(f"No SiteNo for {location}")
-            continue
-
-        filt = (
-            "(BidSustainable eq true) and (BidNonSustainable eq true) "
-            f"and (SeasonYear eq '{code}') and (Grade eq '{grade}') and (SiteNo eq '{site_no}')"
-        )
-        url = f"{API_BASE}/BID_PUBLIC/AllBidsSet?$filter={quote(filt, safe="()' ")}"
-        response = page.request.get(url, timeout=60000)
-        diagnostics.append(f"{location} {grade}: SiteNo={site_no}, HTTP={response.status}")
-        if not response.ok:
-            continue
-        try:
-            data = response.json()
-            results = data.get("d", {}).get("results", [])
-        except Exception:
-            continue
-        prices = []
-        for item in results:
-            try:
-                price = float(item.get("Price"))
-                if 100 <= price <= 2000:
-                    prices.append(price)
-            except (TypeError, ValueError):
-                pass
-        if prices:
-            bids[f"{location}|{grade}"] = max(prices)
-            diagnostics.append(f"{location} {grade}: bids={len(prices)}, highest={max(prices)}")
-        else:
-            diagnostics.append(f"{location} {grade}: bids=0")
-
-    for line in diagnostics:
-        print(f"CropConnect API: {line}")
-    return bids
 
 
 def fetch_all_bids():
@@ -193,7 +258,6 @@ def fetch_all_bids():
 
             bids = fetch_targeted_bids(page, season)
 
-            # Fallback to rendered rows / captured JSON if the targeted API did not return a target.
             if len(bids) < len(TARGETS):
                 season_re = re.compile(rf"\b{re.escape(season)}\b")
                 location_grade = [(loc, grd, re.compile(rf"\b{re.escape(loc)}\b", re.I), re.compile(rf"\b{re.escape(grd)}\b", re.I)) for loc, grd in TARGETS]
