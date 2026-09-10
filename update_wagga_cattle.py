@@ -1,76 +1,85 @@
+#!/usr/bin/env python3
+import html
+import re
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
-import os
 
-URL = "https://www.mla.com.au/prices-markets/market-reports/cattle/wagga/"
+SOURCE_URL = "https://agoralivestock.com.au/saleyard-wagga-cattle/"
+OUTPUT_FILE = Path(__file__).with_name("wagga_cattle.xml")
 
-def fetch_prices():
-    response = requests.get(URL)
+def get_text():
+    response = requests.get(SOURCE_URL, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
+    response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
+    return re.sub(r"\s+", " ", html.unescape(soup.get_text(" ", strip=True))).strip()
 
-    # Find the table containing averages
-    table = soup.find("table")
-    if not table:
-        return None, None
+def find(pattern, text):
+    return re.search(pattern, text, re.IGNORECASE | re.DOTALL)
 
-    rows = table.find_all("tr")
+def cents_range(patterns, text):
+    values = []
+    for pattern in patterns:
+        for m in re.finditer(pattern, text, re.I | re.S):
+            values.extend(int(v.replace(",", "")) for v in m.groups() if v)
+    if not values:
+        return "Not reported"
+    return "%d–%dc/kg" % (min(values), max(values))
 
-    processor_cow = None
-    young_cattle = None
+def market_direction(text):
+    if re.search(r"\b(strong|stronger|firmer|dearer|lifted|gained|competitive)\b", text, re.I):
+        return "FIRM"
+    if re.search(r"\b(softer|cheaper|easier|eased|weaker|declined)\b", text, re.I):
+        return "SOFTER"
+    return "STEADY"
 
-    for row in rows:
-        cells = row.find_all("td")
-        if len(cells) < 2:
-            continue
+def main():
+    text = get_text()
+    date_match = find(r"Report Date:\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})", text)
+    yarding_match = find(r"Total Yarding:\s*([\d,]+)", text)
+    if not date_match or not yarding_match:
+        raise RuntimeError("Agora Wagga cattle date/yarding not found")
 
-        label = cells[0].get_text(strip=True).lower()
-        value = cells[1].get_text(strip=True)
+    feeder = cents_range([
+        r"Light feeder steers[^.]{0,120}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
+        r"Medium weight feeder steers[^.]{0,120}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
+        r"Heavy feeder steers[^.]{0,120}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
+    ], text)
 
-        # Processor Cow Average
-        if "processor" in label and "cow" in label:
-            processor_cow = value
+    cows = cents_range([
+        r"heavy cows[^.]{0,100}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
+        r"leaner cows[^.]{0,100}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
+    ], text)
 
-        # Young Cattle Average (handles all MLA label variations)
-        if any(term in label for term in ["young", "yearling", "yc", "vealer"]):
-            young_cattle = value
+    market = market_direction(text)
+    summary = {"FIRM": "Market firm to stronger.", "SOFTER": "Market softer.", "STEADY": "Market mostly steady."}[market]
 
-    return processor_cow, young_cattle
-
-
-def update_xml(processor_cow, young_cattle):
-    xml_path = "wagga_cattle.xml"
-
-    with open(xml_path, "w", encoding="utf-8") as f:
-        f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-  <channel>
-    <title>Wagga Cattle Averages</title>
-    <link>{URL}</link>
-    <description>Processor Cow & Young Cattle Averages</description>
-    <language>en-au</language>
-
-    <item>
-      <title>Wagga Cattle Averages</title>
-      <link>{URL}</link>
-      <guid>wagga-cattle-averages</guid>
-      <pubDate>{datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
-      <description><![CDATA[
-        <p><strong>Processor Cow Average:</strong> {processor_cow}</p>
-        <p><strong>Young Cattle Average:</strong> {young_cattle}</p>
-      ]]></description>
-    </item>
-
-  </channel>
-</rss>""")
-
+    root = ET.Element("rss", version="2.0")
+    channel = ET.SubElement(root, "channel")
+    ET.SubElement(channel, "title").text = "Wagga Cattle Sale"
+    ET.SubElement(channel, "link").text = SOURCE_URL
+    item = ET.SubElement(channel, "item")
+    ET.SubElement(item, "title").text = "Wagga Cattle Sale — " + date_match.group(1)
+    description = "\n".join([
+        "WAGGA CATTLE SALE — " + date_match.group(1), "",
+        "Feeder Steers: " + feeder,
+        "Cows: " + cows, "",
+        "Yarding: " + yarding_match.group(1) + " head",
+        "Market: " + market,
+        "Summary: " + summary,
+    ])
+    ET.SubElement(item, "description").text = description
+    ET.SubElement(item, "pubDate").text = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+    ET.SubElement(item, "guid").text = SOURCE_URL
+    ET.ElementTree(root).write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
 
 if __name__ == "__main__":
-    processor_cow, young_cattle = fetch_prices()
-
-    # ⭐ KEEP LAST KNOWN PRICE LOGIC ⭐
-    if processor_cow in ["N/A", "Pending", None, ""] or young_cattle in ["N/A", "Pending", None, ""]:
-        print("No new cattle data — keeping last known prices.")
-        exit(0)
-
-    update_xml(processor_cow, young_cattle)
+    try:
+        main()
+    except Exception as error:
+        if OUTPUT_FILE.exists():
+            print("Update failed; retaining previous feed:", error)
+        else:
+            raise
