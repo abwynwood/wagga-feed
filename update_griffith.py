@@ -42,27 +42,22 @@ def main():
     if not date_match or not yarding_match:
         raise RuntimeError("Agora Griffith date/yarding not found")
 
+    # Agora range extraction: capture the actual low-to-high sale range.
     light_lambs = money_range([
-        r"Restockers paid from \\$([\\d,]+) to \\$([\\d,]+)/head",
-        r"Restockers paid from \\$([\\d,]+) to \\$([\\d,]+)/hd",
+        r"Restockers?[^.]{0,220}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"store lambs?[^.]{0,180}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
     ], text)
 
-    if light_lambs == "Not reported":
-        light_lambs = money_range([
-            r"store lambs?[^.]{0,160}?from \\$([\\d,]+) to \\$([\\d,]+)/head",
-        ], text)
-
     trade_lambs = money_range([
-        r"trade to heavy lambs in a range of \\$([\\d,]+) to \\$([\\d,]+)/head",
-        r"fresh medium to heavy trades?[^.]{0,120}?from \\$([\\d,]+) to \\$([\\d,]+)/head",
-        r"trade lambs?[^.]{0,100}?range of \\$([\\d,]+) to \\$([\\d,]+)/head",
+        r"trade(?: lambs?)?[^.]{0,220}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"fresh medium to heavy trades?[^.]{0,180}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
     ], text)
 
     # Use the broad mutton range, rather than unrelated ewe top prices.
     mutton = money_range([
-        r"most sheep with frame and condition from \\$([\\d,]+) to \\$([\\d,]+)/head",
-        r"mutton[^.]{0,350}?from \\$([\\d,]+) to \\$([\\d,]+)/head",
-        r"lighter and odd clean-up penlots from \\$([\\d,]+) to \\$([\\d,]+)/head",
+        r"mutton[^.]{0,350}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"most sheep with frame and condition from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"lighter and odd clean-up penlots from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
     ], text)
     # Agora's Griffith page can lag behind the latest market-summary page.
     # If the sale commentary does not expose category prices, use the matching
@@ -70,8 +65,8 @@ def main():
     # Pull the top prices from the commentary. Agora uses several phrasings,
     # so allow both "reached" and "topped" and do not require a backslash.
     heavy_lambs_range = money_range([
-        r"heavy lambs?[^.]{0,250}?(?:from|range of) \$([\d,]+) to \$([\d,]+)/head",
-        r"super heavy[^.]{0,180}?(?:from|range of) \$([\d,]+) to \$([\d,]+)/head",
+        r"heavy lambs?[^.]{0,300}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"super heavy[^.]{0,220}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
     ], text)
     heavy_lambs = find(r"heavy lambs[^.]{0,250}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", text)
     if not heavy_lambs:
@@ -107,10 +102,10 @@ def main():
     ET.SubElement(item, "title").text = "Griffith Sheep Sale — " + date_match.group(1)
     description = "\n".join([
         "GRIFFITH SHEEP SALE — " + date_match.group(1), "",
-        "Restocker Lambs: " + light_lambs,
-        "Trade Lambs: " + trade_lambs,
-        "Heavy Lambs Top: " + heavy_lambs_value,
-        "Mutton: " + mutton,
+        "Restocker Lambs Range: " + light_lambs,
+        "Trade Lambs Range: " + trade_lambs,
+        "Heavy Lambs Range: " + heavy_lambs_value,
+        "Mutton Range: " + mutton,
         "Yarding: " + yarding_match.group(1) + " head",
         "Market: " + market,
         "Summary: " + summary,
