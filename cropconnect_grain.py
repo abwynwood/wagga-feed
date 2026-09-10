@@ -9,7 +9,6 @@ from playwright.sync_api import sync_playwright
 
 CROPCONNECT_URL = "https://cropconnect.com.au/cc/market/bids"
 API_BASE = "https://cropconnect.com.au/sap/opu/odata/SAP"
-CACHE_FILE = Path("/tmp/cropconnect_bids.json")
 TARGETS = [
     ("Hillston", "APW1"),
     ("Hillston", "BAR1"),
@@ -34,26 +33,11 @@ def season_code(season):
 
 
 def normalise(text):
-    return re.sub(r"\s+", " ", text or "").strip()
+    return re.sub(r"\s+", " ", str(text or "")).strip()
 
 
 def prices_from_text(text):
     return [float(x.replace(",", "")) for x in re.findall(r"\$\s*([0-9][0-9,]*(?:\.\d+)?)", text)]
-
-
-def row_candidates(page):
-    rows = []
-    selectors = ["tr", '[role="row"]', ".ag-row", ".MuiDataGrid-row"]
-    for frame in page.frames:
-        for selector in selectors:
-            try:
-                for text in frame.locator(selector).all_inner_texts():
-                    text = normalise(text)
-                    if text:
-                        rows.append(text)
-            except Exception:
-                pass
-    return rows
 
 
 def parse_odata_response(response):
@@ -101,72 +85,102 @@ def odata_get(page, path, params):
     return response, parse_odata_response(response)
 
 
+def item_text(item):
+    return normalise(" ".join(str(v) for v in item.values() if v is not None))
+
+
+def item_price(item):
+    for key, value in item.items():
+        if str(key).lower() in {"price", "bidprice", "cashprice", "amount", "value"}:
+            try:
+                price = float(str(value).replace(",", "").replace("$", "").strip())
+                if 100 <= price <= 2000:
+                    return price
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
 def fetch_targeted_bids(page, season):
-    diagnostics = []
+    """Fetch the public bid collection once, then filter locally.
+
+    CropConnect's OData service rejects the compound $filter expression used by
+    earlier versions of this scraper. The public AllBidsSet endpoint itself is
+    readable, so downloading the current collection and filtering its records is
+    both simpler and more robust.
+    """
     bids = {}
     try:
-        site_response, sites = odata_get(
+        response, rows = odata_get(
             page,
-            "SITE_PUBLIC/Site",
-            {"$top": "2000", "$format": "json"},
+            "BID_PUBLIC/AllBidsSet",
+            {"$top": "5000", "$format": "json"},
         )
-        diagnostics.append(f"Site API HTTP={site_response.status}, rows={len(sites)}")
-        site_map = {}
-        wanted = {loc.lower() for loc, _ in TARGETS}
-        for item in sites:
-            desc = normalise(item.get("SiteDescr") or item.get("SiteDescription") or item.get("SiteName") or item.get("Description") or "")
-            if desc.lower() in wanted:
-                site_no = item.get("SiteNo") or item.get("Site") or item.get("SiteID")
-                if site_no:
-                    site_map[desc.lower()] = str(site_no)
-        diagnostics.append(f"Site map: {site_map}")
+        print(f"CropConnect API: AllBidsSet HTTP={response.status}, rows={len(rows)}")
 
-        code = season_code(season)
+        wanted_season = {season.lower(), season_code(season).lower()}
         for location, grade in TARGETS:
-            site_no = site_map.get(location.lower())
-            if not site_no:
-                continue
-            filt = (
-                "(BidSustainable eq true) and (BidNonSustainable eq true) "
-                f"and (SeasonYear eq '{code}') and (Grade eq '{grade}') and (SiteNo eq '{site_no}')"
-            )
-            response, results = odata_get(page, "BID_PUBLIC/AllBidsSet", {"$filter": filt, "$format": "json"})
             prices = []
-            for item in results:
-                try:
-                    price = float(item.get("Price"))
-                    if 100 <= price <= 2000:
-                        prices.append(price)
-                except (TypeError, ValueError):
-                    pass
+            for item in rows:
+                text = item_text(item)
+                lower = text.lower()
+                if location.lower() not in lower or grade.lower() not in lower:
+                    continue
+
+                # If the record exposes a season field, require the current one.
+                season_values = []
+                for key, value in item.items():
+                    key_lower = str(key).lower()
+                    if key_lower in {"seasonyear", "season", "seasonyr", "seasonyrdesc", "cropseason", "marketingseason"}:
+                        season_values.append(normalise(value).lower())
+                if season_values and not any(v in wanted_season for v in season_values):
+                    continue
+                if not season_values and season_code(season).lower() not in lower and season.lower() not in lower:
+                    continue
+
+                price = item_price(item)
+                if price is not None:
+                    prices.append(price)
+
             if prices:
                 bids[f"{location}|{grade}"] = max(prices)
-            diagnostics.append(f"{location} {grade}: SiteNo={site_no}, rows={len(results)}, highest={max(prices) if prices else None}")
+            print(f"CropConnect API: {location} {grade}: rows matched={len(prices)}, highest={max(prices) if prices else None}")
     except Exception as error:
-        diagnostics.append(f"Direct OData unavailable: {error}")
+        print(f"CropConnect API unavailable: {error}")
 
-    for line in diagnostics:
-        print(f"CropConnect API: {line}")
     return bids
 
 
+def row_candidates(page):
+    rows = []
+    selectors = ["tr", '[role="row"]', ".ag-row", ".MuiDataGrid-row"]
+    for frame in page.frames:
+        for selector in selectors:
+            try:
+                for text in frame.locator(selector).all_inner_texts():
+                    text = normalise(text)
+                    if text:
+                        rows.append(text)
+            except Exception:
+                pass
+    return rows
+
+
 def matching_prices_in_object(obj, location, grade, season):
-    """Find prices in a JSON object whose surrounding record identifies location, grade and season."""
     found = []
     loc_re = re.compile(rf"\b{re.escape(location)}\b", re.I)
     grade_re = re.compile(rf"\b{re.escape(grade)}\b", re.I)
-    season_re = re.compile(rf"(?:\b{re.escape(season)}\b|\b{re.escape(season_code(season))}\b)")
+    season_re = re.compile(rf"(?:\b{re.escape(season)}\b|\b{re.escape(season_code(season))}\b)", re.I)
     price_keys = {"price", "bidprice", "cashprice", "amount", "value"}
-    season_keys = {"season", "seasonyear", "seasonyr", "seasonyrdesc", "cropseason", "marketingseason"}
 
     def walk(value):
         if isinstance(value, dict):
             text = normalise(" ".join(str(v) for v in value.values() if isinstance(v, (str, int, float))))
-            if loc_re.search(text) and grade_re.search(text) and (season_re.search(text) or not any(str(k).lower() in season_keys for k in value)):
+            if loc_re.search(text) and grade_re.search(text) and season_re.search(text):
                 for key, val in value.items():
                     if str(key).lower() in price_keys:
                         try:
-                            p = float(val)
+                            p = float(str(val).replace(",", "").replace("$", "").strip())
                             if 100 <= p <= 2000:
                                 found.append(p)
                         except (TypeError, ValueError):
@@ -186,7 +200,6 @@ def browser_data_bids(page, network_payloads, season):
     targets = [(loc, grade, re.compile(rf"\b{re.escape(loc)}\b", re.I), re.compile(rf"\b{re.escape(grade)}\b", re.I)) for loc, grade in TARGETS]
     season_re = re.compile(rf"\b{re.escape(season)}\b")
 
-    # First use rendered table rows. This is the same public data the user sees in CropConnect.
     for row in row_candidates(page):
         if not season_re.search(row):
             continue
@@ -198,7 +211,6 @@ def browser_data_bids(page, network_payloads, season):
                 key = f"{location}|{grade}"
                 bids[key] = max(bids.get(key, 0), max(prices))
 
-    # Then inspect JSON returned by the site's own requests. This handles virtualized tables.
     for url, body in network_payloads:
         try:
             data = json.loads(body)
@@ -224,7 +236,6 @@ def fetch_all_bids():
         def capture_response(response):
             ctype = (response.headers.get("content-type") or "").lower()
             url = response.url
-            # Keep API responses even when the server labels them unexpectedly.
             if "BID_PUBLIC" not in url and "SITE_PUBLIC" not in url and "json" not in ctype:
                 return
             try:
