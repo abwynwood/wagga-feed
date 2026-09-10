@@ -1,60 +1,102 @@
+import re
+import html
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timezone
 
 URL = "https://www.grainflow.com.au/daily-prices"
-OUTPUT_FILE = "westwyalong_apw1.xml"
+LOCATION = "West Wyalong"
+GRADE = "BAR1"
+OUTPUT_FILE = "westwyalong_bar1.xml"
 
-def fetch_westwyalong_apw1():
-    try:
-        response = requests.get(URL, timeout=20)
-        response.raise_for_status()
-    except Exception:
-        return None
 
+def fetch_price():
+    response = requests.get(URL, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
+    response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Find the West Wyalong section
-    ww_section = soup.find("h3", string="West Wyalong")
-    if not ww_section:
-        return None
+    # GrainFlow has changed its HTML layout over time. First try the
+    # location heading + table, then fall back to scanning table rows.
+    for heading in soup.find_all(["h2", "h3", "h4"]):
+        if LOCATION.lower() in heading.get_text(" ", strip=True).lower():
+            table = heading.find_next("table")
+            if table:
+                price = price_from_table(table)
+                if price:
+                    return price
 
-    table = ww_section.find_next("table")
-    if not table:
-        return None
+    for table in soup.find_all("table"):
+        text = table.get_text(" ", strip=True)
+        if LOCATION.lower() in text.lower() and re.search(r"\b" + re.escape(GRADE) + r"\b", text, re.I):
+            price = price_from_table(table)
+            if price:
+                return price
 
-    rows = table.find_all("tr")
+    # Last-resort text search: keep the location and grade close together
+    # so another site's price cannot be selected.
+    page_text = re.sub(r"\s+", " ", html.unescape(soup.get_text(" ", strip=True)))
+    pattern = rf"{re.escape(LOCATION)}.{{0,1200}}?\b{re.escape(GRADE)}\b.{{0,250}}?(\$\s?[0-9,]+(?:\.\d+)?)"
+    match = re.search(pattern, page_text, re.I)
+    if match:
+        return match.group(1).replace(" ", "")
 
-    apw1_price = None
+    # Also allow the grade to appear before the location in the rendered text.
+    pattern = rf"\b{re.escape(GRADE)}\b.{{0,1200}}?{re.escape(LOCATION)}.{{0,250}}?(\$\s?[0-9,]+(?:\.\d+)?)"
+    match = re.search(pattern, page_text, re.I)
+    if match:
+        return match.group(1).replace(" ", "")
 
-    for row in rows:
-        cells = [c.get_text(strip=True) for c in row.find_all("td")]
-        if len(cells) >= 5 and cells[1] == "APW1":
-            apw1_price = cells[4].replace("$", "")
-            break
+    return None
 
-    return apw1_price
+
+def price_from_table(table):
+    for row in table.find_all("tr"):
+        cells = [c.get_text(" ", strip=True) for c in row.find_all(["th", "td"])]
+        row_text = " | ".join(cells)
+        if not re.search(r"\b" + re.escape(GRADE) + r"\b", row_text, re.I):
+            continue
+
+        prices = re.findall(r"\$\s?[0-9,]+(?:\.\d+)?", row_text)
+        if prices:
+            return prices[-1].replace(" ", "")
+    return None
 
 
 def write_xml(price):
-    xml_content = f"""<?xml version="1.0"?>
-<items>
-  <item>
-    <title>West Wyalong APW1</title>
-    <price>{price}</price>
-  </item>
-</items>
-"""
-    with open(OUTPUT_FILE, "w") as f:
-        f.write(xml_content)
+    now = datetime.now(timezone.utc)
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
+        f.write(f'''<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>{LOCATION} {GRADE}</title>
+    <link>{URL}</link>
+    <language>en-au</language>
+    <item>
+      <title>{LOCATION} {GRADE}</title>
+      <link>{URL}</link>
+      <guid>{LOCATION.lower().replace(" ", "-")}-{GRADE.lower()}</guid>
+      <pubDate>{now.strftime("%a, %d %b %Y %H:%M:%S +0000")}</pubDate>
+      <description><![CDATA[
+        <strong>{LOCATION} {GRADE}</strong><br>
+        {price}
+      ]]></description>
+    </item>
+  </channel>
+</rss>
+''')
 
 
 if __name__ == "__main__":
-    price = fetch_westwyalong_apw1()
+    try:
+        price = fetch_price()
+    except Exception as error:
+        print(f"GrainFlow fetch failed: {error}")
+        price = None
 
-    # ⭐ KEEP LAST KNOWN PRICE LOGIC ⭐
-    if price in ["N/A", "Pending", None, ""]:
-        print("No new West Wyalong APW1 data — keeping last known price.")
-        exit(0)
-
-    write_xml(price)
+    # Never replace a valid displayed price with N/A just because GrainFlow
+    # temporarily changes layout or is unavailable.
+    if price in [None, "", "N/A", "Pending"]:
+        print(f"No new {LOCATION} {GRADE} data — keeping last known feed.")
+    else:
+        write_xml(price)
+        print(f"Updated {LOCATION} {GRADE}: {price}")
