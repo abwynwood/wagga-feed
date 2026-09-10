@@ -3,104 +3,96 @@ import requests
 from urllib.parse import urljoin
 
 PAGE_URL = "https://app.agridigital.io/community/prices?location=Hanlon+Enterprises"
-
-KEYWORDS = re.compile(
-    r"(?:api|graphql|prices?|market|grain|wheat|barley|APW1|BAR1|Hanlon|Ungarie|Junee|Riverina)",
-    re.IGNORECASE,
-)
-URL_RE = re.compile(r'https?://[^\"\'<>\\s]+')
 SCRIPT_RE = re.compile(r'<script[^>]+src=[\"\']([^\"\']+)[\"\']', re.IGNORECASE)
+ENDPOINT_RE = re.compile(r'(?:https?://[^\"\'<>\s]+|[\"\']/(?:api|graphql|community|v[0-9]+)[^\"\'<>\s]*)', re.IGNORECASE)
+CONTEXT_RE = re.compile(r'(?:graphql|/api/|api\.|baseUrl|rootUrl|community/prices|priceBasis|prices|market)', re.IGNORECASE)
 
 
-def fetch(session, url):
+def get(session, url):
     return session.get(
         url,
         timeout=30,
         headers={
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                "Chrome/130.0 Safari/537.36"
-            ),
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
     )
 
 
-def print_matches(label, text):
-    print(f"--- {label} keyword matches ---")
-    matches = []
-    for match in KEYWORDS.finditer(text):
-        start = max(0, match.start() - 160)
-        end = min(len(text), match.end() + 240)
-        snippet = re.sub(r"\s+", " ", text[start:end])
-        if snippet not in matches:
-            matches.append(snippet)
-        if len(matches) >= 20:
+def clean(value):
+    return value.rstrip("),;]}}")
+
+
+def snippets(text, limit=8):
+    found = []
+    for match in CONTEXT_RE.finditer(text):
+        start = max(0, match.start() - 220)
+        end = min(len(text), match.end() + 420)
+        value = re.sub(r"\s+", " ", text[start:end])
+        if len(value) > 700:
+            value = value[:700] + "..."
+        if value not in found:
+            found.append(value)
+        if len(found) >= limit:
             break
-    if not matches:
-        print("No keyword matches found")
-    else:
-        for snippet in matches:
-            print(snippet)
+    return found
 
 
 def main():
     session = requests.Session()
-    print("=== HANLON AGRIDIGITAL DIAGNOSTIC ===")
-    print(f"Request: {PAGE_URL}")
-
-    response = fetch(session, PAGE_URL)
+    print("=== HANLON AGRIDIGITAL DIAGNOSTIC v2 ===")
+    response = get(session, PAGE_URL)
     print(f"HTTP: {response.status_code}")
     print(f"Final URL: {response.url}")
     print(f"Content-Type: {response.headers.get('content-type', '')}")
-    print(f"Bytes: {len(response.content)}")
-    print("Headers:")
-    for key in ("server", "location", "x-powered-by", "cache-control", "etag"):
-        if response.headers.get(key):
-            print(f"  {key}: {response.headers[key]}")
+    print(f"HTML bytes: {len(response.content)}")
 
-    text = response.text
-    print("\n--- HTML START (first 12000 chars) ---")
-    print(text[:12000])
-    print("--- HTML END ---")
+    scripts = list(dict.fromkeys(urljoin(response.url, src) for src in SCRIPT_RE.findall(response.text)))
+    print(f"JS bundles found: {len(scripts)}")
 
-    scripts = []
-    for src in SCRIPT_RE.findall(text):
-        scripts.append(urljoin(response.url, src))
-    scripts = list(dict.fromkeys(scripts))
-    print(f"\nScript sources found: {len(scripts)}")
-    for url in scripts:
-        print(url)
+    endpoint_candidates = []
+    bundle_summaries = []
 
-    print_matches("HTML", text)
-
-    # Inspect a limited number of frontend bundles for API/data endpoints.
-    print("\n=== FRONTEND BUNDLE INSPECTION ===")
-    for index, script_url in enumerate(scripts[:15], 1):
+    for index, script_url in enumerate(scripts, 1):
         try:
-            script_response = session.get(script_url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
-            body = script_response.text
-            print(f"\n[{index}] {script_url}")
-            print(f"HTTP {script_response.status_code}; {len(script_response.content)} bytes; {script_response.headers.get('content-type', '')}")
-
-            urls = []
-            for found in URL_RE.findall(body):
-                clean = found.rstrip("),;]}")
-                if clean not in urls:
-                    urls.append(clean)
-            interesting_urls = [
-                u for u in urls
-                if re.search(r"api|graphql|price|market|community|grain", u, re.IGNORECASE)
-            ]
-            if interesting_urls:
-                print("Interesting URLs:")
-                for u in interesting_urls[:30]:
-                    print(f"  {u}")
-
-            # Print only short, relevant snippets rather than dumping minified bundles.
-            print_matches("BUNDLE", body)
+            r = get(session, script_url)
+            body = r.text
+            bundle_summaries.append((index, script_url, r.status_code, len(r.content)))
+            for found in ENDPOINT_RE.findall(body):
+                value = clean(found)
+                if value not in endpoint_candidates:
+                    endpoint_candidates.append(value)
         except Exception as exc:
-            print(f"Bundle fetch failed: {exc}")
+            print(f"Bundle {index} failed: {exc}")
+
+    print("\n=== BUNDLES ===")
+    for index, url, status, size in bundle_summaries:
+        print(f"{index}: HTTP {status}; {size} bytes; {url}")
+
+    print("\n=== ENDPOINT CANDIDATES ===")
+    if endpoint_candidates:
+        for value in endpoint_candidates[:200]:
+            print(value)
+    else:
+        print("None found")
+
+    print("\n=== RELEVANT CODE CONTEXT ===")
+    total = 0
+    for index, script_url, status, size in bundle_summaries:
+        if total >= 50:
+            break
+        try:
+            body = get(session, script_url).text
+            if not CONTEXT_RE.search(body):
+                continue
+            relevant = snippets(body, limit=min(8, 50 - total))
+            if relevant:
+                print(f"\n--- Bundle {index}: {script_url} ---")
+                for value in relevant:
+                    print(value)
+                    total += 1
+        except Exception:
+            pass
 
     print("\n=== END HANLON DIAGNOSTIC ===")
 
