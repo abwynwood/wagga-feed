@@ -70,18 +70,54 @@ def fetch_site_map():
 
 
 def fetch_all_bids():
-    for params in (None, {"$top": "5000"}, {"$format": "json"}):
+    """Fetch the same public bid collection the CropConnect web app uses, page by page."""
+    rows = []
+    skip = 0
+    page_size = 500
+    total = None
+    params_base = {
+        "$filter": "(BidSustainable eq true) and (BidNonSustainable eq true)",
+        "$orderby": "Price desc, BidTypeDesc asc",
+        "$top": str(page_size),
+        "$inlinecount": "allpages",
+    }
+
+    while True:
+        params = dict(params_base)
+        params["$skip"] = str(skip)
         try:
             response = get_json(BID_URL, params)
-            print(f"CropConnect API: AllBidsSet HTTP={response.status_code}, params={params}")
-            if response.status_code == 200:
-                rows = as_rows(response.json())
-                print(f"CropConnect API: AllBidsSet rows={len(rows)}")
-                if rows:
-                    return rows
+            print(f"CropConnect API: AllBidsSet page skip={skip} HTTP={response.status_code}")
+            if response.status_code != 200:
+                print(f"CropConnect API: AllBidsSet error body={response.text[:500]}")
+                break
+            payload = response.json()
+            page_rows = as_rows(payload)
+            rows.extend(page_rows)
+            if isinstance(payload, dict):
+                data = payload.get("d")
+                if isinstance(data, dict) and data.get("__count") is not None:
+                    try:
+                        total = int(data["__count"])
+                    except (TypeError, ValueError):
+                        pass
+                if payload.get("@odata.count") is not None:
+                    try:
+                        total = int(payload["@odata.count"])
+                    except (TypeError, ValueError):
+                        pass
+            print(f"CropConnect API: AllBidsSet page rows={len(page_rows)}, collected={len(rows)}, total={total}")
+            if not page_rows or len(page_rows) < page_size:
+                break
+            if total is not None and len(rows) >= total:
+                break
+            skip += page_size
         except Exception as exc:
             print(f"CropConnect API: AllBidsSet error: {exc}")
-    return []
+            break
+
+    print(f"CropConnect API: AllBidsSet total rows collected={len(rows)}")
+    return rows
 
 
 def row_value(row, aliases):
@@ -134,11 +170,10 @@ def find_bids(rows, site_map, season):
             if not location_or_site_matches(row, location, site_no):
                 continue
             grade_value = row_value(row, ("Grade", "GradeCode", "CommodityGrade", "ProductGrade"))
-            if not grade_matches(grade_value, grade):
-                if normalise(grade) not in normalise(row_values_text(row)):
-                    continue
+            if grade_value is None or not grade_matches(grade_value, grade):
+                continue
             season_value = row_value(row, ("SeasonYear", "Season", "SeasonYr", "SeasonCode", "CropYear"))
-            if season_value is not None and not season_matches(season_value, season):
+            if season_value is None or not season_matches(season_value, season):
                 continue
             price = price_from_row(row)
             if price is not None:
