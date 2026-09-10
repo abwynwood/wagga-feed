@@ -21,28 +21,23 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests beautifulsoup4
+        pip install requests beautifulsoup4 playwright
+        python -m playwright install --with-deps chromium
 
     - name: Update Griffith Sheep Report
       run: python update_griffith.py
 
-    - name: Test Riverina Commodity Sheets
-      run: python test_riverina.py
-
-    - name: Test Hanlon AgriDigital Riverina Prices
-      run: python test_hanlon.py
-
-    - name: Update Hillston APW1 (GrainFlow)
+    - name: Update Hillston APW1 (CropConnect)
       run: python hillston_apw1.py
 
-    - name: Update Hillston BAR1 (GrainFlow)
+    - name: Update Hillston BAR1 (CropConnect)
       run: python hillston_bar1.py
 
-    - name: Update West Wyalong APW1 (GrainFlow)
-      run: python westwyalong_apw1.py
+    - name: Update Condobolin APW1 (CropConnect)
+      run: python condobolin_apw1.py
 
-    - name: Update West Wyalong BAR1 (GrainFlow)
-      run: python westwyalong_bar1.py
+    - name: Update Condobolin BAR1 (CropConnect)
+      run: python condobolin_bar1.py
 
     - name: Update NSW Goat OTH Price
       run: python update_goats.py
