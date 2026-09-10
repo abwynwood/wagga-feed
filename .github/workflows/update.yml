@@ -26,6 +26,9 @@ jobs:
     - name: Update Griffith Sheep Report
       run: python update_griffith.py
 
+    - name: Test Riverina Commodity Sheets
+      run: python test_riverina.py
+
     - name: Update Hillston APW1 (GrainFlow)
       run: python hillston_apw1.py
 
