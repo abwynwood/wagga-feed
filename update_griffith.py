@@ -92,12 +92,10 @@ def main():
         range_patterns,
     )
 
-    trade_lambs = category_range(
-        text,
-        [r"trade\s+lambs?", r"trade\s+to\s+heavy\s+lambs?", r"fresh\s+medium\s+to\s+heavy\s+trades?"],
-        [r"heavy\s+lambs?", r"extra\s+heavy", r"super\s+heavy", r"mutton", r"yarding"],
-        range_patterns,
-    )
+    # Agora reports Restocker and Trade lambs together at Griffith.
+    # Use the same reported range for both categories rather than trying to
+    # scrape Trade separately (which can incorrectly return "Not reported").
+    trade_lambs = light_lambs
 
     heavy_lambs_range = category_range(
         text,
@@ -133,8 +131,10 @@ def main():
 
             if light_lambs == "Not reported":
                 light_lambs = category_range(summary_text, [r"restockers?", r"store\s+lambs?"], stops, range_patterns)
-            if trade_lambs == "Not reported":
-                trade_lambs = category_range(summary_text, [r"trade\s+lambs?", r"trade\s+to\s+heavy\s+lambs?", r"fresh\s+medium\s+to\s+heavy\s+trades?"], [r"heavy\s+lambs?", r"extra\s+heavy", r"super\s+heavy", r"mutton", r"yarding"], range_patterns)
+            if light_lambs == "Not reported":
+                light_lambs = category_range(summary_text, [r"restockers?", r"store\s+lambs?"], stops, range_patterns)
+            # Restocker and Trade are the same reported category/price at Griffith.
+            trade_lambs = light_lambs
             if heavy_lambs_range == "Not reported":
                 heavy_lambs_range = category_range(summary_text, [r"heavy\s+lambs?"], [r"extra\s+heavy", r"super\s+heavy", r"heavy\s+merinos?", r"mutton", r"yarding"], range_patterns)
             if mutton == "Not reported":
