@@ -1,6 +1,7 @@
-import json
 import re
 from datetime import datetime
+from email.utils import format_datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
@@ -42,16 +43,14 @@ def as_rows(payload):
 
 def get_json(url, params=None):
     headers = {"Accept": "application/json", "User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, params=params, headers=headers, timeout=30)
-    return response
+    return requests.get(url, params=params, headers=headers, timeout=30)
 
 
 def fetch_site_map():
     response = get_json(SITE_URL, {"$top": "1000", "$format": "json"})
+    print(f"CropConnect API: Site API HTTP={response.status_code}")
     if response.status_code != 200:
-        print(f"CropConnect API: Site API HTTP={response.status_code}")
         return {}
-
     rows = as_rows(response.json())
     site_map = {}
     for row in rows:
@@ -60,23 +59,30 @@ def fetch_site_map():
         for location in ("hillston", "condobolin"):
             if normalise(location) in normalise(text) and site_no is not None:
                 site_map[location] = str(site_no)
-
-    print(f"CropConnect API: Site API HTTP=200, rows={len(rows)}")
-    print(f"CropConnect API: Site map: {site_map}")
+    print(f"CropConnect API: Site rows={len(rows)}, site map={site_map}")
     return site_map
 
 
 def fetch_all_bids():
-    # The public endpoint rejects the compound OData filters, so request the
-    # public collection and filter locally using SiteNo, Grade and SeasonYear.
-    response = get_json(BID_URL, {"$top": "5000", "$format": "json"})
-    print(f"CropConnect API: AllBidsSet HTTP={response.status_code}")
-    if response.status_code != 200:
-        return []
-
-    rows = as_rows(response.json())
-    print(f"CropConnect API: AllBidsSet rows={len(rows)}")
-    return rows
+    # Try the public collection in a few forms because this SAP service is
+    # stricter than a normal OData implementation about query parameters.
+    attempts = [
+        (BID_URL, None),
+        (BID_URL, {"$top": "5000"}),
+        (BID_URL, {"$format": "json"}),
+    ]
+    for url, params in attempts:
+        try:
+            response = get_json(url, params)
+            print(f"CropConnect API: AllBidsSet HTTP={response.status_code}, params={params}")
+            if response.status_code == 200:
+                rows = as_rows(response.json())
+                print(f"CropConnect API: AllBidsSet rows={len(rows)}")
+                if rows:
+                    return rows
+        except Exception as exc:
+            print(f"CropConnect API: AllBidsSet error: {exc}")
+    return []
 
 
 def price_from_row(row):
@@ -86,10 +92,7 @@ def price_from_row(row):
             continue
         match = re.search(r"-?\d+(?:\.\d+)?", str(value).replace(",", ""))
         if match:
-            try:
-                return float(match.group(0))
-            except ValueError:
-                pass
+            return float(match.group(0))
     return None
 
 
@@ -97,7 +100,7 @@ def season_matches(value, season):
     raw = str(value or "").strip().lower()
     compact = re.sub(r"[^0-9]", "", raw)
     wanted = re.sub(r"[^0-9]", "", season)
-    return raw == season.lower() or compact == wanted or compact == wanted[:2]
+    return raw == season.lower() or compact == wanted
 
 
 def grade_matches(value, grade):
@@ -105,9 +108,7 @@ def grade_matches(value, grade):
 
 
 def site_matches(value, site_no):
-    if site_no is None:
-        return False
-    return str(value or "").strip() == str(site_no).strip()
+    return site_no is not None and str(value or "").strip() == str(site_no).strip()
 
 
 def find_bids(rows, site_map, season):
@@ -125,17 +126,13 @@ def find_bids(rows, site_map, season):
             price = price_from_row(row)
             if price is not None:
                 prices.append(price)
-
         if prices:
             matched[name] = max(prices)
         print(f"CropConnect target: {name}, site={site_no}, bids={len(prices)}, highest={matched.get(name)}")
-
     return matched
 
 
 def browser_fallback(season, site_map):
-    # Keep the rendered/network fallback for cases where the public OData
-    # collection is temporarily unavailable.
     payloads = []
     try:
         with sync_playwright() as p:
@@ -144,49 +141,78 @@ def browser_fallback(season, site_map):
 
             def capture(response):
                 content_type = response.headers.get("content-type", "")
-                if "json" in content_type:
-                    try:
-                        payloads.append(response.json())
-                    except Exception:
-                        pass
+                if "json" not in content_type:
+                    return
+                try:
+                    payloads.append(response.json())
+                except Exception:
+                    pass
 
             page.on("response", capture)
             page.goto(MARKET_URL, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(10000)
+            page.wait_for_timeout(15000)
             browser.close()
     except Exception as exc:
         print(f"CropConnect browser fallback failed: {exc}")
         return {}
 
-    all_rows = []
+    rows = []
     for payload in payloads:
-        all_rows.extend(as_rows(payload))
+        rows.extend(as_rows(payload))
+    print(f"CropConnect browser fallback: JSON payloads={len(payloads)}, rows={len(rows)}")
+    return find_bids(rows, site_map, season) if rows else {}
 
-    return find_bids(all_rows, site_map, season)
+
+def write_xml(target, output, season, filename):
+    now = datetime.now(ZoneInfo("UTC"))
+    pub_date = format_datetime(now, usegmt=True)
+    safe_guid = normalise(target).replace("condobolin", "condobolin-").replace("hillston", "hillston-")
+    description = f"<strong>{target}</strong><br>{output}<br>Season {season}"
+    xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>{target}</title>
+    <link>{MARKET_URL}</link>
+    <language>en-au</language>
+    <item>
+      <title>{target}</title>
+      <link>{MARKET_URL}</link>
+      <guid>{safe_guid}</guid>
+      <pubDate>{pub_date}</pubDate>
+      <description><![CDATA[
+        {description}
+      ]]></description>
+    </item>
+  </channel>
+</rss>
+'''
+    Path(filename).write_text(xml, encoding="utf-8")
+    print(f"Wrote {filename}: {output}")
 
 
-def update(target):
+def update(location, grade, filename):
+    target = f"{location} {grade}"
+    if target not in TARGETS:
+        raise ValueError(f"Unsupported CropConnect target: {target}")
+
     season = current_season()
     site_map = fetch_site_map()
     rows = fetch_all_bids()
     matched = find_bids(rows, site_map, season) if rows else {}
-
-    if not matched:
+    if target not in matched:
         fallback = browser_fallback(season, site_map)
-        if fallback:
-            matched = fallback
-
-    print(f"CropConnect snapshot: season={season}, matched={len(matched)}/4")
-    print(f"CropConnect matched bids: {matched}")
+        if target in fallback:
+            matched[target] = fallback[target]
 
     value = matched.get(target)
     output = f"${value:.2f}/t" if value is not None else "Unavailable"
-    print(f"{target}: {output}")
+    print(f"CropConnect snapshot: season={season}, target={target}, output={output}")
+    write_xml(target, output, season, filename)
     return output
 
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) != 2 or sys.argv[1] not in TARGETS:
-        raise SystemExit(f"Usage: python cropconnect_grain.py [{', '.join(TARGETS)}]")
-    update(sys.argv[1])
+    if len(sys.argv) != 4:
+        raise SystemExit("Usage: python cropconnect_grain.py <location> <grade> <filename>")
+    update(sys.argv[1], sys.argv[2], sys.argv[3])
