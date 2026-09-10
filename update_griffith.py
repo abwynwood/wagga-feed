@@ -28,6 +28,33 @@ def money_range(patterns, text):
             return "$%s/hd – $%s/hd" % (f"{low:,}", f"{high:,}")
     return "Not reported"
 
+def category_range(text, category_patterns, stop_patterns, range_patterns):
+    """Search only inside one sheep category to prevent cross-category matches."""
+    category = None
+    for pattern in category_patterns:
+        m = find(pattern, text)
+        if m:
+            category = m
+            break
+    if not category:
+        return "Not reported"
+
+    tail = text[category.end():]
+    for stop_pattern in stop_patterns:
+        m = find(stop_pattern, tail)
+        if m:
+            tail = tail[:m.start()]
+    return money_range(range_patterns, tail)
+
+
+def top_value(patterns, text):
+    for pattern in patterns:
+        m = find(pattern, text)
+        if m:
+            return "$%s/hd" % f"{int(m.group(1).replace(',', '')):,}"
+    return "Not reported"
+
+
 def market_direction(text):
     if re.search(r"\b(stronger|firmer|dearer|strengthened|gained momentum|strong buyer|strong demand)\b", text, re.I):
         return "FIRM"
@@ -42,54 +69,90 @@ def main():
     if not date_match or not yarding_match:
         raise RuntimeError("Agora Griffith date/yarding not found")
 
-    # Agora range extraction: capture the actual low-to-high sale range.
-    light_lambs = money_range([
-        r"Restockers?[^.]{0,220}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"store lambs?[^.]{0,180}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+    # Keep each sheep category isolated. Agora often puts several categories
+    # in the same paragraph, so broad regexes can otherwise copy one category's
+    # range into another.
+    stops = [
+        r"trade\\s+lambs?",
+        r"heavy\\s+lambs?",
+        r"extra\\s+heavy",
+        r"super\\s+heavy",
+        r"mutton",
+        r"yarding",
+    ]
+    range_patterns = [
+        r"(?:ranged\\s+)?from\\s+\\$([\\d,]+)\\s+to\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
+        r"range\\s+of\\s+\\$([\\d,]+)\\s+to\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
+    ]
+
+    light_lambs = category_range(
+        text,
+        [r"restockers?", r"store\\s+lambs?"],
+        stops,
+        range_patterns,
+    )
+
+    trade_lambs = category_range(
+        text,
+        [r"trade\\s+lambs?", r"trade\\s+to\\s+heavy\\s+lambs?", r"fresh\\s+medium\\s+to\\s+heavy\\s+trades?"],
+        [r"heavy\\s+lambs?", r"extra\\s+heavy", r"super\\s+heavy", r"mutton", r"yarding"],
+        range_patterns,
+    )
+
+    heavy_lambs_range = category_range(
+        text,
+        [r"heavy\\s+lambs?"],
+        [r"extra\\s+heavy", r"super\\s+heavy", r"heavy\\s+merinos?", r"mutton", r"yarding"],
+        range_patterns,
+    )
+
+    heavy_lambs_top = top_value([
+        r"heavy\\s+lambs?[^.]{0,300}?(?:reached|topped\\s+at|topped)\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
+        r"(?:super|supper)\\s+heavy[^.]{0,220}?(?:reached|topped\\s+at|topped)\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
     ], text)
 
-    trade_lambs = money_range([
-        r"trade(?: lambs?)?[^.]{0,220}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"fresh medium to heavy trades?[^.]{0,180}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-    ], text)
+    mutton = category_range(
+        text,
+        [r"mutton"],
+        [r"yarding"],
+        range_patterns,
+    )
 
-    # Use the broad mutton range, rather than unrelated ewe top prices.
-    mutton = money_range([
-        r"mutton[^.]{0,350}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"most sheep with frame and condition from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"lighter and odd clean-up penlots from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-    ], text)
-    # Agora's Griffith page can lag behind the latest market-summary page.
-    # If the sale commentary does not expose category prices, use the matching
-    # Agora sheep market summary as a fallback.
-    # Pull the top prices from the commentary. Agora uses several phrasings,
-    # so allow both "reached" and "topped" and do not require a backslash.
-    heavy_lambs_range = money_range([
-        r"heavy lambs?[^.]{0,300}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"super heavy[^.]{0,220}?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-    ], text)
-    heavy_lambs = find(r"heavy lambs[^.]{0,250}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", text)
-    if not heavy_lambs:
-        heavy_lambs = find(r"(?:super|supper) heavy[^.]{0,120}?topped at\s+\$([\d,]+)/head", text)
-    crossbred_ewes = find(r"crossbred ewes[^.]{0,120}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", text)
-    if not heavy_lambs or not crossbred_ewes:
-        try:
-            raw_date = date_match.group(1)
-            clean_date = re.sub(r"(st|nd|rd|th)", "", raw_date)
-            dt = datetime.strptime(clean_date, "%d %B %Y")
-            slug = dt.strftime("%-d-%B-%Y").lower()
-            summary_url = f"https://agoralivestock.com.au/sheep-market-summary-{slug}/"
-            summary_response = requests.get(summary_url, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
-            if summary_response.ok:
-                summary_soup = BeautifulSoup(summary_response.text, "html.parser")
-                summary_text = re.sub(r"\s+", " ", html.unescape(summary_soup.get_text(" ", strip=True))).strip()
-                heavy_lambs = heavy_lambs or find(r"heavy lambs[^.]{0,250}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", summary_text)
-                crossbred_ewes = crossbred_ewes or find(r"crossbred ewes[^.]{0,120}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", summary_text)
-        except Exception:
-            pass
+    # Agora's Griffith page can lag behind the matching market-summary page.
+    # Use it as a fallback, but apply the same category boundaries.
+    try:
+        raw_date = date_match.group(1)
+        clean_date = re.sub(r"(st|nd|rd|th)", "", raw_date)
+        dt = datetime.strptime(clean_date, "%d %B %Y")
+        slug = dt.strftime("%-d-%B-%Y").lower()
+        summary_url = f"https://agoralivestock.com.au/sheep-market-summary-{slug}/"
+        summary_response = requests.get(summary_url, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
+        if summary_response.ok:
+            summary_soup = BeautifulSoup(summary_response.text, "html.parser")
+            summary_text = re.sub(r"\\s+", " ", html.unescape(summary_soup.get_text(" ", strip=True))).strip()
 
-    heavy_lambs_value = heavy_lambs_range if heavy_lambs_range != "Not reported" else (f"$%s/hd" % f"{int(heavy_lambs.group(1).replace(',', '')):,}" if heavy_lambs else "Not reported")
-    crossbred_ewes_value = f"$%s/hd" % f"{int(crossbred_ewes.group(1).replace(',', '')):,}" if crossbred_ewes else "Not reported"
+            if light_lambs == "Not reported":
+                light_lambs = category_range(summary_text, [r"restockers?", r"store\\s+lambs?"], stops, range_patterns)
+            if trade_lambs == "Not reported":
+                trade_lambs = category_range(summary_text, [r"trade\\s+lambs?", r"trade\\s+to\\s+heavy\\s+lambs?", r"fresh\\s+medium\\s+to\\s+heavy\\s+trades?"], [r"heavy\\s+lambs?", r"extra\\s+heavy", r"super\\s+heavy", r"mutton", r"yarding"], range_patterns)
+            if heavy_lambs_range == "Not reported":
+                heavy_lambs_range = category_range(summary_text, [r"heavy\\s+lambs?"], [r"extra\\s+heavy", r"super\\s+heavy", r"heavy\\s+merinos?", r"mutton", r"yarding"], range_patterns)
+            if mutton == "Not reported":
+                mutton = category_range(summary_text, [r"mutton"], [r"yarding"], range_patterns)
+            if heavy_lambs_top == "Not reported":
+                heavy_lambs_top = top_value([
+                    r"heavy\\s+lambs?[^.]{0,300}?(?:reached|topped\\s+at|topped)\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
+                    r"(?:super|supper)\\s+heavy[^.]{0,220}?(?:reached|topped\\s+at|topped)\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
+                ], summary_text)
+    except Exception:
+        pass
+
+    if heavy_lambs_range != "Not reported":
+        heavy_lambs_value = heavy_lambs_range
+        heavy_lambs_label = "Heavy Lambs Range: "
+    else:
+        heavy_lambs_value = heavy_lambs_top
+        heavy_lambs_label = "Heavy Lambs Top: "
 
     market = market_direction(text)
     summary = {"FIRM": "Prices firm to stronger.", "SOFTER": "Prices softer across the market.", "STEADY": "Prices mostly steady."}[market]
@@ -104,7 +167,7 @@ def main():
         "GRIFFITH SHEEP SALE — " + date_match.group(1), "",
         "Restocker Lambs Range: " + light_lambs,
         "Trade Lambs Range: " + trade_lambs,
-        "Heavy Lambs Range: " + heavy_lambs_value,
+        heavy_lambs_label + heavy_lambs_value,
         "Mutton Range: " + mutton,
         "Yarding: " + yarding_match.group(1) + " head",
         "Market: " + market,
