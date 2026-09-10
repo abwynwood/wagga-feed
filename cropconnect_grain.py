@@ -2,11 +2,13 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from playwright.sync_api import sync_playwright
 
 CROPCONNECT_URL = "https://cropconnect.com.au/cc/market/bids"
+API_BASE = "https://cropconnect.com.au/sap/opu/odata/SAP"
 CACHE_FILE = Path("/tmp/cropconnect_bids.json")
 TARGETS = [
     ("Hillston", "APW1"),
@@ -27,6 +29,10 @@ def current_season():
     return f"{start % 100:02d}/{end % 100:02d}"
 
 
+def season_code(season):
+    return season.split("/")[0]
+
+
 def normalise(text):
     return re.sub(r"\s+", " ", text or "").strip()
 
@@ -36,14 +42,8 @@ def prices_from_text(text):
 
 
 def row_candidates(page):
-    """Return visible table/grid rows from the page and its frames."""
     rows = []
-    selectors = [
-        "tr",
-        '[role="row"]',
-        ".ag-row",
-        ".MuiDataGrid-row",
-    ]
+    selectors = ["tr", '[role="row"]', ".ag-row", ".MuiDataGrid-row"]
     for frame in page.frames:
         for selector in selectors:
             try:
@@ -69,25 +69,19 @@ def all_frame_text(page):
 
 
 def price_from_matching_json(value, location, grade, season):
-    """Recursively find prices only in JSON objects matching location+grade."""
     found = []
     location_re = re.compile(rf"\b{re.escape(location)}\b", re.I)
     grade_re = re.compile(rf"\b{re.escape(grade)}\b", re.I)
     season_re = re.compile(rf"\b{re.escape(season)}\b")
     price_keys = {"price", "bidprice", "cashprice", "amount", "value"}
-    season_keys = {"season", "cropseason", "marketingseason"}
+    season_keys = {"season", "seasonyr", "seasonyrdesc", "cropseason", "marketingseason"}
 
     def walk(obj):
         if isinstance(obj, dict):
             blob = normalise(json.dumps(obj, ensure_ascii=False))
             if location_re.search(blob) and grade_re.search(blob):
-                seasons = []
-                for key, val in obj.items():
-                    if str(key).lower() in season_keys:
-                        seasons.append(str(val))
-                if seasons and not any(season_re.search(s) for s in seasons):
-                    pass
-                else:
+                seasons = [str(val) for key, val in obj.items() if str(key).lower() in season_keys]
+                if not seasons or any(season_re.search(s) or season_code(season) in s for s in seasons):
                     for key, val in obj.items():
                         if str(key).lower() in price_keys and isinstance(val, (int, float)):
                             if 100 <= float(val) <= 2000:
@@ -102,9 +96,66 @@ def price_from_matching_json(value, location, grade, season):
     return found
 
 
+def fetch_targeted_bids(page, season):
+    """Use CropConnect's public OData API directly for the four exact targets."""
+    site_response = page.request.get(
+        f"{API_BASE}/SITE_PUBLIC/Site?$top=2000",
+        timeout=60000,
+    )
+    if not site_response.ok:
+        raise RuntimeError(f"Site API returned HTTP {site_response.status}")
+    site_data = site_response.json()
+    sites = site_data.get("d", {}).get("results", [])
+    site_map = {}
+    for item in sites:
+        desc = normalise(item.get("SiteDescr", ""))
+        if desc.lower() in {loc.lower() for loc, _ in TARGETS}:
+            site_map[desc.lower()] = str(item.get("Site", ""))
+
+    bids = {}
+    diagnostics = []
+    code = season_code(season)
+    for location, grade in TARGETS:
+        site_no = site_map.get(location.lower())
+        if not site_no:
+            diagnostics.append(f"No SiteNo for {location}")
+            continue
+
+        filt = (
+            "(BidSustainable eq true) and (BidNonSustainable eq true) "
+            f"and (SeasonYear eq '{code}') and (Grade eq '{grade}') and (SiteNo eq '{site_no}')"
+        )
+        url = f"{API_BASE}/BID_PUBLIC/AllBidsSet?$filter={quote(filt, safe="()' ")}"
+        response = page.request.get(url, timeout=60000)
+        diagnostics.append(f"{location} {grade}: SiteNo={site_no}, HTTP={response.status}")
+        if not response.ok:
+            continue
+        try:
+            data = response.json()
+            results = data.get("d", {}).get("results", [])
+        except Exception:
+            continue
+        prices = []
+        for item in results:
+            try:
+                price = float(item.get("Price"))
+                if 100 <= price <= 2000:
+                    prices.append(price)
+            except (TypeError, ValueError):
+                pass
+        if prices:
+            bids[f"{location}|{grade}"] = max(prices)
+            diagnostics.append(f"{location} {grade}: bids={len(prices)}, highest={max(prices)}")
+        else:
+            diagnostics.append(f"{location} {grade}: bids=0")
+
+    for line in diagnostics:
+        print(f"CropConnect API: {line}")
+    return bids
+
+
 def fetch_all_bids():
     season = current_season()
-    cached = None
     if CACHE_FILE.exists():
         try:
             cached = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
@@ -140,58 +191,36 @@ def fetch_all_bids():
                 pass
             page.wait_for_timeout(2000)
 
-            bids = {}
-            location_grade = [(loc, grd, re.compile(rf"\b{re.escape(loc)}\b", re.I), re.compile(rf"\b{re.escape(grd)}\b", re.I)) for loc, grd in TARGETS]
-            season_re = re.compile(rf"\b{re.escape(season)}\b")
+            bids = fetch_targeted_bids(page, season)
 
-            # Prefer actual rendered rows, matching the data visible to a user.
-            for row in row_candidates(page):
-                if not season_re.search(row):
-                    continue
-                prices = prices_from_text(row)
-                if not prices:
-                    continue
-                for location, grade, location_re, grade_re in location_grade:
-                    if location_re.search(row) and grade_re.search(row):
-                        key = f"{location}|{grade}"
-                        bids[key] = max(bids.get(key, 0), max(prices))
-
-            # Some table implementations expose only a text blob. Check small
-            # windows of lines rather than mixing unrelated prices on the page.
+            # Fallback to rendered rows / captured JSON if the targeted API did not return a target.
             if len(bids) < len(TARGETS):
-                for text in all_frame_text(page):
-                    lines = [normalise(x) for x in text.splitlines() if normalise(x)]
-                    for i in range(len(lines)):
-                        window = " | ".join(lines[i:i + 8])
-                        if not season_re.search(window):
-                            continue
-                        prices = prices_from_text(window)
-                        if not prices:
-                            continue
-                        for location, grade, location_re, grade_re in location_grade:
-                            if location_re.search(window) and grade_re.search(window):
-                                key = f"{location}|{grade}"
-                                bids[key] = max(bids.get(key, 0), max(prices))
+                season_re = re.compile(rf"\b{re.escape(season)}\b")
+                location_grade = [(loc, grd, re.compile(rf"\b{re.escape(loc)}\b", re.I), re.compile(rf"\b{re.escape(grd)}\b", re.I)) for loc, grd in TARGETS]
+                for row in row_candidates(page):
+                    if not season_re.search(row):
+                        continue
+                    prices = prices_from_text(row)
+                    if not prices:
+                        continue
+                    for location, grade, location_re, grade_re in location_grade:
+                        if location_re.search(row) and grade_re.search(row):
+                            key = f"{location}|{grade}"
+                            bids[key] = max(bids.get(key, 0), max(prices))
 
-            # Finally inspect JSON responses from the SPA.
-            for url, body in network_json:
-                try:
-                    data = json.loads(body)
-                except Exception:
-                    continue
-                for location, grade, _, _ in location_grade:
-                    prices = price_from_matching_json(data, location, grade, season)
-                    if prices:
-                        key = f"{location}|{grade}"
-                        bids[key] = max(bids.get(key, 0), max(prices))
+                for url, body in network_json:
+                    try:
+                        data = json.loads(body)
+                    except Exception:
+                        continue
+                    for location, grade, _, _ in location_grade:
+                        prices = price_from_matching_json(data, location, grade, season)
+                        if prices:
+                            key = f"{location}|{grade}"
+                            bids[key] = max(bids.get(key, 0), max(prices))
 
             CACHE_FILE.write_text(json.dumps({"season": season, "bids": bids}), encoding="utf-8")
             print(f"CropConnect snapshot: season={season}, matched={len(bids)}/{len(TARGETS)}, json_responses={len(network_json)}")
-            if not bids:
-                for frame in page.frames:
-                    print(f"CropConnect frame: {frame.url}")
-                for url, body in network_json[:10]:
-                    print(f"CropConnect JSON: {url} :: {normalise(body)[:500]}")
             return bids, season
         finally:
             context.close()
