@@ -13,234 +13,234 @@ OUTPUT_FILE = Path(__file__).with_name("griffith.xml")
 
 
 def get_text():
-response = requests.get(
-SOURCE_URL,
-timeout=30,
-headers={"User-Agent": "wagga-feed/1.0"},
-)
-response.raise_for_status()
+    response = requests.get(
+        SOURCE_URL,
+        timeout=30,
+        headers={"User-Agent": "wagga-feed/1.0"},
+    )
+    response.raise_for_status()
 
-soup = BeautifulSoup(response.text, "html.parser")
-return re.sub(
-r"\s+",
-" ",
-html.unescape(soup.get_text(" ", strip=True)),
-).strip()
+    soup = BeautifulSoup(response.text, "html.parser")
+    return re.sub(
+        r"\s+",
+        " ",
+        html.unescape(soup.get_text(" ", strip=True)),
+    ).strip()
 
 
 def find(pattern, text):
-return re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+    return re.search(pattern, text, re.IGNORECASE | re.DOTALL)
 
 
 def get_range(patterns, text):
-for pattern in patterns:
-match = find(pattern, text)
+    for pattern in patterns:
+        match = find(pattern, text)
 
-if match:
-low = int(match.group(1).replace(",", ""))
-high = int(match.group(2).replace(",", ""))
+        if match:
+            low = int(match.group(1).replace(",", ""))
+            high = int(match.group(2).replace(",", ""))
 
-return f"${low:,}/hd – ${high:,}/hd"
+            return f"${low:,}/hd – ${high:,}/hd"
 
-return "No price reported"
+    return "No price reported"
 
 
 def main():
-text = get_text()
+    text = get_text()
 
-date_match = find(
-r"Report Date:\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})",
-text,
-)
+    date_match = find(
+        r"Report Date:\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})",
+        text,
+    )
 
-yarding_match = find(
-r"Total Yarding:\s*([\d,]+)",
-text,
-)
+    yarding_match = find(
+        r"Total Yarding:\s*([\d,]+)",
+        text,
+    )
 
-if not date_match or not yarding_match:
-raise RuntimeError(
-"Agora Griffith date/yarding not found"
-)
+    if not date_match or not yarding_match:
+        raise RuntimeError(
+            "Agora Griffith date/yarding not found"
+        )
 
-# ---------------------------------------------------------
-# LIGHT / RESTOCKER LAMBS
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # LIGHT / RESTOCKER LAMBS
+    # ---------------------------------------------------------
 
-light_lambs = get_range(
-[
-r"restocker lambs?.{0,150}?\$([\d,]+)\s*(?:-|to)\s*\$([\d,]+)/head",
-r"store lambs?.{0,150}?\$([\d,]+)\s*(?:-|to)\s*\$([\d,]+)/head",
-],
-text,
-)
+    light_lambs = get_range(
+        [
+            r"restocker lambs?.{0,150}?\$([\d,]+)\s*(?:-|to)\s*\$([\d,]+)/head",
+            r"store lambs?.{0,150}?\$([\d,]+)\s*(?:-|to)\s*\$([\d,]+)/head",
+        ],
+        text,
+    )
 
-# ---------------------------------------------------------
-# TRADE / HEAVY LAMBS
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # TRADE / HEAVY LAMBS
+    # ---------------------------------------------------------
 
-trade_lambs = get_range(
-[
-r"trade weights sold from \$([\d,]+) to \$([\d,]+)/head",
-r"trade to heavy lambs?.{0,150}?\$([\d,]+) to \$([\d,]+)/head",
-r"trade lambs?.{0,150}?\$([\d,]+) to \$([\d,]+)/head",
-],
-text,
-)
+    trade_lambs = get_range(
+        [
+            r"trade weights sold from \$([\d,]+) to \$([\d,]+)/head",
+            r"trade to heavy lambs?.{0,150}?\$([\d,]+) to \$([\d,]+)/head",
+            r"trade lambs?.{0,150}?\$([\d,]+) to \$([\d,]+)/head",
+        ],
+        text,
+    )
 
-# ---------------------------------------------------------
-# MUTTON
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # MUTTON
+    # ---------------------------------------------------------
 
-mutton_prices = []
+    mutton_prices = []
 
-patterns = [
-r"ewes?.{0,120}?reaching \$([\d,]+)/head",
-r"sheep?.{0,120}?reaching \$([\d,]+)/head",
-r"mutton?.{0,120}?\$([\d,]+) to \$([\d,]+)/head",
-]
+    patterns = [
+        r"ewes?.{0,120}?reaching \$([\d,]+)/head",
+        r"sheep?.{0,120}?reaching \$([\d,]+)/head",
+        r"mutton?.{0,120}?\$([\d,]+) to \$([\d,]+)/head",
+    ]
 
-for pattern in patterns:
-match = find(pattern, text)
+    for pattern in patterns:
+        match = find(pattern, text)
 
-if match:
-numbers = [
-int(number.replace(",", ""))
-for number in match.groups()
-if number
-]
+        if match:
+            numbers = [
+                int(number.replace(",", ""))
+                for number in match.groups()
+                if number
+            ]
 
-mutton_prices.extend(numbers)
+            mutton_prices.extend(numbers)
 
-if mutton_prices:
-mutton_low = min(mutton_prices)
-mutton_high = max(mutton_prices)
+    if mutton_prices:
+        mutton_low = min(mutton_prices)
+        mutton_high = max(mutton_prices)
 
-mutton = (
-f"${mutton_low:,}/hd – "
-f"${mutton_high:,}/hd"
-)
-else:
-mutton = "No price reported"
+        mutton = (
+            f"${mutton_low:,}/hd – "
+            f"${mutton_high:,}/hd"
+        )
+    else:
+        mutton = "No price reported"
 
-# ---------------------------------------------------------
-# MARKET DIRECTION
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # MARKET DIRECTION
+    # ---------------------------------------------------------
 
-if re.search(
-r"stronger trend|prices were stronger|prices averaged dearer",
-text,
-re.IGNORECASE,
-):
-market = "FIRM"
+    if re.search(
+        r"stronger trend|prices were stronger|prices averaged dearer",
+        text,
+        re.IGNORECASE,
+    ):
+        market = "FIRM"
 
-elif re.search(
-r"\bsofter\b|\bcheaper\b|\beased\b",
-text,
-re.IGNORECASE,
-):
-market = "SOFTER"
+    elif re.search(
+        r"\bsofter\b|\bcheaper\b|\beased\b",
+        text,
+        re.IGNORECASE,
+    ):
+        market = "SOFTER"
 
-else:
-market = "STEADY"
+    else:
+        market = "STEADY"
 
-# ---------------------------------------------------------
-# SHORT MARKET SUMMARY
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # SHORT MARKET SUMMARY
+    # ---------------------------------------------------------
 
-if market == "FIRM":
-summary = "Market sold to a stronger trend."
+    if market == "FIRM":
+        summary = "Market sold to a stronger trend."
 
-elif market == "SOFTER":
-summary = "Prices softer across the market."
+    elif market == "SOFTER":
+        summary = "Prices softer across the market."
 
-else:
-summary = "Prices mostly steady."
+    else:
+        summary = "Prices mostly steady."
 
-# ---------------------------------------------------------
-# BUILD XML FEED
-# ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # BUILD XML FEED
+    # ---------------------------------------------------------
 
-root = ET.Element(
-"rss",
-version="2.0",
-)
+    root = ET.Element(
+        "rss",
+        version="2.0",
+    )
 
-channel = ET.SubElement(
-root,
-"channel",
-)
+    channel = ET.SubElement(
+        root,
+        "channel",
+    )
 
-ET.SubElement(
-channel,
-"title",
-).text = "Griffith Sheep Sale"
+    ET.SubElement(
+        channel,
+        "title",
+    ).text = "Griffith Sheep Sale"
 
-ET.SubElement(
-channel,
-"link",
-).text = SOURCE_URL
+    ET.SubElement(
+        channel,
+        "link",
+    ).text = SOURCE_URL
 
-item = ET.SubElement(
-channel,
-"item",
-)
+    item = ET.SubElement(
+        channel,
+        "item",
+    )
 
-ET.SubElement(
-item,
-"title",
-).text = f"Griffith Sheep Sale — {date_match.group(1)}"
+    ET.SubElement(
+        item,
+        "title",
+    ).text = f"Griffith Sheep Sale — {date_match.group(1)}"
 
-description = "\n".join(
-[
-f"GRIFFITH SHEEP SALE — {date_match.group(1)}",
-"",
-f"Light Lambs: {light_lambs}",
-f"Trade/Heavy Lambs: {trade_lambs}",
-f"Mutton: {mutton}",
-"",
-f"Yarding: {yarding_match.group(1)} head",
-f"Market: {market}",
-f"Summary: {summary}",
-]
-)
+    description = "\n".join(
+        [
+            f"GRIFFITH SHEEP SALE — {date_match.group(1)}",
+            "",
+            f"Light Lambs: {light_lambs}",
+            f"Trade/Heavy Lambs: {trade_lambs}",
+            f"Mutton: {mutton}",
+            "",
+            f"Yarding: {yarding_match.group(1)} head",
+            f"Market: {market}",
+            f"Summary: {summary}",
+        ]
+    )
 
-ET.SubElement(
-item,
-"description",
-).text = description
+    ET.SubElement(
+        item,
+        "description",
+    ).text = description
 
-ET.SubElement(
-item,
-"pubDate",
-).text = datetime.now(
-timezone.utc
-).strftime(
-"%a, %d %b %Y %H:%M:%S +0000"
-)
+    ET.SubElement(
+        item,
+        "pubDate",
+    ).text = datetime.now(
+        timezone.utc
+    ).strftime(
+        "%a, %d %b %Y %H:%M:%S +0000"
+    )
 
-ET.SubElement(
-item,
-"guid",
-).text = SOURCE_URL
+    ET.SubElement(
+        item,
+        "guid",
+    ).text = SOURCE_URL
 
-ET.ElementTree(root).write(
-OUTPUT_FILE,
-encoding="utf-8",
-xml_declaration=True,
-)
+    ET.ElementTree(root).write(
+        OUTPUT_FILE,
+        encoding="utf-8",
+        xml_declaration=True,
+    )
 
 
 if __name__ == "__main__":
-try:
-main()
+    try:
+        main()
 
-except Exception as error:
-# If Agora temporarily fails, keep the last successful feed.
-if OUTPUT_FILE.exists():
-print(
-"Update failed; retaining previous feed:",
-error,
-)
-else:
-raise
+    except Exception as error:
+        # If Agora temporarily fails, keep the last successful feed.
+        if OUTPUT_FILE.exists():
+            print(
+                "Update failed; retaining previous feed:",
+                error,
+            )
+        else:
+            raise
