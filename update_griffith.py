@@ -47,15 +47,35 @@ def main():
         r"Restockers paid from \$([\d,]+) to \$([\d,]+)/hd",
     ], text)
 
+    if light_lambs == "Not reported":
+        restocker_top = find(r"store lambs? to \d+kg sold to \$([\d,]+)/head", text)
+        if restocker_top:
+            light_lambs = f"${int(restocker_top.group(1).replace(",", "")):,}/hd"
+
     trade_lambs = money_range([
         r"trade to heavy lambs in a range of \$([\d,]+) to \$([\d,]+)/head",
         r"trade lambs?[^.]{0,100}?range of \$([\d,]+) to \$([\d,]+)/head",
     ], text)
 
     mutton = money_range([
+        r"mutton[^.]{0,350}?from \$([\d,]+) to \$([\d,]+)/head",
         r"lighter and odd clean-up penlots from \$([\d,]+) to \$([\d,]+)/head",
         r"most sheep with frame and condition from \$([\d,]+) to \$([\d,]+)/head",
     ], text)
+
+    # Current Griffith reports often give mutton as two top prices,
+    # e.g. crossbred ewes $365 and Merino ewes $288.
+    mutton_tops = re.findall(
+        r"(?:crossbred ewes|Merino ewes)[^$]{0,80}?\$([\d,]+)/head",
+        text,
+        re.IGNORECASE,
+    )
+    if mutton_tops:
+        values = sorted(int(v.replace(",", "")) for v in mutton_tops)
+        if len(values) >= 2:
+            mutton = f"${values[0]:,}/hd – ${values[-1]:,}/hd"
+        else:
+            mutton = f"${values[0]:,}/hd"
 
     top = find(r"crossbred and Dorper ewes.*?top of \$([\d,]+)/head", text)
     low = find(r"lighter and odd clean-up penlots from \$([\d,]+) to \$([\d,]+)/head", text)
@@ -105,7 +125,6 @@ def main():
         "Trade Lambs: " + trade_lambs,
         "Heavy Lambs Top: " + heavy_lambs_value,
         "Mutton: " + mutton,
-        "Crossbred Ewes Top: " + crossbred_ewes_value, "",
         "Yarding: " + yarding_match.group(1) + " head",
         "Market: " + market,
         "Summary: " + summary,
