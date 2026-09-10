@@ -65,8 +65,12 @@ def main():
     # Agora's Griffith page can lag behind the latest market-summary page.
     # If the sale commentary does not expose category prices, use the matching
     # Agora sheep market summary as a fallback.
-    heavy_lambs = find(r"heavy lambs reached \\$([\\d,]+)/head", text)
-    crossbred_ewes = find(r"crossbred ewes reached \\$([\\d,]+)/head", text)
+    # Pull the top prices from the commentary. Agora uses several phrasings,
+    # so allow both "reached" and "topped" and do not require a backslash.
+    heavy_lambs = find(r"heavy lambs[^.]{0,250}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", text)
+    if not heavy_lambs:
+        heavy_lambs = find(r"(?:super|supper) heavy[^.]{0,120}?topped at\s+\$([\d,]+)/head", text)
+    crossbred_ewes = find(r"crossbred ewes[^.]{0,120}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", text)
     if not heavy_lambs or not crossbred_ewes:
         try:
             raw_date = date_match.group(1)
@@ -77,9 +81,9 @@ def main():
             summary_response = requests.get(summary_url, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
             if summary_response.ok:
                 summary_soup = BeautifulSoup(summary_response.text, "html.parser")
-                summary_text = re.sub(r"\\s+", " ", html.unescape(summary_soup.get_text(" ", strip=True))).strip()
-                heavy_lambs = heavy_lambs or find(r"heavy lambs reached \\$([\\d,]+)/head", summary_text)
-                crossbred_ewes = crossbred_ewes or find(r"crossbred ewes reached \\$([\\d,]+)/head", summary_text)
+                summary_text = re.sub(r"\s+", " ", html.unescape(summary_soup.get_text(" ", strip=True))).strip()
+                heavy_lambs = heavy_lambs or find(r"heavy lambs[^.]{0,250}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", summary_text)
+                crossbred_ewes = crossbred_ewes or find(r"crossbred ewes[^.]{0,120}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", summary_text)
         except Exception:
             pass
 
