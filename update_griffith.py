@@ -69,6 +69,10 @@ def main():
     # Agora sheep market summary as a fallback.
     # Pull the top prices from the commentary. Agora uses several phrasings,
     # so allow both "reached" and "topped" and do not require a backslash.
+    heavy_lambs_range = money_range([
+        r"heavy lambs?[^.]{0,250}?(?:from|range of) \$([\d,]+) to \$([\d,]+)/head",
+        r"super heavy[^.]{0,180}?(?:from|range of) \$([\d,]+) to \$([\d,]+)/head",
+    ], text)
     heavy_lambs = find(r"heavy lambs[^.]{0,250}?(?:reached|topped at|topped)\s+\$([\d,]+)/head", text)
     if not heavy_lambs:
         heavy_lambs = find(r"(?:super|supper) heavy[^.]{0,120}?topped at\s+\$([\d,]+)/head", text)
@@ -89,7 +93,7 @@ def main():
         except Exception:
             pass
 
-    heavy_lambs_value = f"$%s/hd" % f"{int(heavy_lambs.group(1).replace(',', '')):,}" if heavy_lambs else "Not reported"
+    heavy_lambs_value = heavy_lambs_range if heavy_lambs_range != "Not reported" else (f"$%s/hd" % f"{int(heavy_lambs.group(1).replace(',', '')):,}" if heavy_lambs else "Not reported")
     crossbred_ewes_value = f"$%s/hd" % f"{int(crossbred_ewes.group(1).replace(',', '')):,}" if crossbred_ewes else "Not reported"
 
     market = market_direction(text)
