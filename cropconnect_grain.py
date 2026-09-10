@@ -21,8 +21,6 @@ TARGETS = {
 
 
 def current_season():
-    # CropConnect grain seasons run October to September. On 10 Sep 2026,
-    # for example, the current season is 25/26, not 26/27.
     now = datetime.now(ZoneInfo("Australia/Sydney"))
     start = now.year - 1 if now.month < 10 else now.year
     return f"{str(start)[-2:]}/{str(start + 1)[-2:]}"
@@ -33,19 +31,16 @@ def normalise(value):
 
 
 def as_rows(payload):
-    """Extract row lists from OData/JSON responses, including nested payloads."""
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)]
     if not isinstance(payload, dict):
         return []
-
     for key in ("d", "value", "results"):
         value = payload.get(key)
         if isinstance(value, dict) and "results" in value:
             value = value["results"]
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
-
     rows = []
     for value in payload.values():
         rows.extend(as_rows(value))
@@ -75,14 +70,9 @@ def fetch_site_map():
 
 
 def fetch_all_bids():
-    attempts = [
-        (BID_URL, None),
-        (BID_URL, {"$top": "5000"}),
-        (BID_URL, {"$format": "json"}),
-    ]
-    for url, params in attempts:
+    for params in (None, {"$top": "5000"}, {"$format": "json"}):
         try:
-            response = get_json(url, params)
+            response = get_json(BID_URL, params)
             print(f"CropConnect API: AllBidsSet HTTP={response.status_code}, params={params}")
             if response.status_code == 200:
                 rows = as_rows(response.json())
@@ -94,15 +84,25 @@ def fetch_all_bids():
     return []
 
 
-def price_from_row(row):
-    for key in ("Price", "BidPrice", "PricePerTonne", "PricePerTon"):
-        value = row.get(key)
-        if value is None:
-            continue
-        match = re.search(r"-?\d+(?:\.\d+)?", str(value).replace(",", ""))
-        if match:
-            return float(match.group(0))
+def row_value(row, aliases):
+    """Return a value using case/underscore-independent field names."""
+    wanted = {normalise(alias) for alias in aliases}
+    for key, value in row.items():
+        if normalise(key) in wanted:
+            return value
     return None
+
+
+def row_values_text(row):
+    return " ".join(str(v) for v in row.values())
+
+
+def price_from_row(row):
+    value = row_value(row, ("Price", "BidPrice", "PricePerTonne", "PricePerTon"))
+    if value is None:
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", str(value).replace(",", ""))
+    return float(match.group(0)) if match else None
 
 
 def season_matches(value, season):
@@ -116,8 +116,17 @@ def grade_matches(value, grade):
     return normalise(value) == normalise(grade)
 
 
-def site_matches(value, site_no):
-    return site_no is not None and str(value or "").strip() == str(site_no).strip()
+def location_or_site_matches(row, location, site_no):
+    # CropConnect's browser payload may use different field names than the
+    # public OData service. Check the common explicit fields first, then the
+    # whole row text for the known location/site number.
+    explicit = row_value(row, ("SiteNo", "Site", "SiteID", "SiteNumber", "Location", "SiteName"))
+    if explicit is not None:
+        value = normalise(explicit)
+        if value == normalise(site_no) or value == normalise(location):
+            return True
+    text = normalise(row_values_text(row))
+    return normalise(location) in text or (site_no is not None and normalise(site_no) in text)
 
 
 def find_bids(rows, site_map, season):
@@ -126,11 +135,15 @@ def find_bids(rows, site_map, season):
         site_no = site_map.get(normalise(location))
         prices = []
         for row in rows:
-            if not site_matches(row.get("SiteNo") or row.get("Site") or row.get("SiteID"), site_no):
+            if not location_or_site_matches(row, location, site_no):
                 continue
-            if not grade_matches(row.get("Grade"), grade):
-                continue
-            if not season_matches(row.get("SeasonYear") or row.get("Season") or row.get("SeasonYr"), season):
+            grade_value = row_value(row, ("Grade", "GradeCode", "CommodityGrade", "ProductGrade"))
+            if not grade_matches(grade_value, grade):
+                # Some UI payloads expose grade inside a combined text field.
+                if normalise(grade) not in normalise(row_values_text(row)):
+                    continue
+            season_value = row_value(row, ("SeasonYear", "Season", "SeasonYr", "SeasonCode", "CropYear"))
+            if season_value is not None and not season_matches(season_value, season):
                 continue
             price = price_from_row(row)
             if price is not None:
@@ -169,11 +182,17 @@ def browser_fallback(season, site_map):
     for payload in payloads:
         rows.extend(as_rows(payload))
     print(f"CropConnect browser fallback: JSON payloads={len(payloads)}, rows={len(rows)}")
+    if rows:
+        print(f"CropConnect browser sample keys: {sorted(rows[0].keys())}")
+        for location in ("Hillston", "Condobolin"):
+            candidates = [r for r in rows if normalise(location) in normalise(row_values_text(r))]
+            print(f"CropConnect browser diagnostic: {location} text-matches={len(candidates)}")
+            for row in candidates[:3]:
+                print(f"CropConnect browser candidate {location}: {row}")
     return find_bids(rows, site_map, season) if rows else {}
 
 
 def write_xml(target, output, season, filename):
-    # email.utils.format_datetime(usegmt=True) requires an actual UTC datetime.
     now = datetime.now(timezone.utc)
     pub_date = format_datetime(now, usegmt=True)
     slug = normalise(target)
@@ -204,7 +223,6 @@ def update(location, grade, filename):
     target = f"{location} {grade}"
     if target not in TARGETS:
         raise ValueError(f"Unsupported CropConnect target: {target}")
-
     season = current_season()
     site_map = fetch_site_map()
     rows = fetch_all_bids()
@@ -213,7 +231,6 @@ def update(location, grade, filename):
         fallback = browser_fallback(season, site_map)
         if target in fallback:
             matched[target] = fallback[target]
-
     value = matched.get(target)
     output = f"${value:.2f}/t" if value is not None else "Unavailable"
     print(f"CropConnect snapshot: season={season}, target={target}, output={output}")
