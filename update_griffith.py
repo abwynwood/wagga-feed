@@ -73,42 +73,42 @@ def main():
     # in the same paragraph, so broad regexes can otherwise copy one category's
     # range into another.
     stops = [
-        r"trade\\s+lambs?",
-        r"heavy\\s+lambs?",
-        r"extra\\s+heavy",
-        r"super\\s+heavy",
+        r"trade\s+lambs?",
+        r"heavy\s+lambs?",
+        r"extra\s+heavy",
+        r"super\s+heavy",
         r"mutton",
         r"yarding",
     ]
     range_patterns = [
-        r"(?:ranged\\s+)?from\\s+\\$([\\d,]+)\\s+to\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
-        r"range\\s+of\\s+\\$([\\d,]+)\\s+to\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
+        r"(?:ranged\s+)?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"range\s+of\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
     ]
 
     light_lambs = category_range(
         text,
-        [r"restockers?", r"store\\s+lambs?"],
+        [r"restockers?", r"store\s+lambs?"],
         stops,
         range_patterns,
     )
 
     trade_lambs = category_range(
         text,
-        [r"trade\\s+lambs?", r"trade\\s+to\\s+heavy\\s+lambs?", r"fresh\\s+medium\\s+to\\s+heavy\\s+trades?"],
-        [r"heavy\\s+lambs?", r"extra\\s+heavy", r"super\\s+heavy", r"mutton", r"yarding"],
+        [r"trade\s+lambs?", r"trade\s+to\s+heavy\s+lambs?", r"fresh\s+medium\s+to\s+heavy\s+trades?"],
+        [r"heavy\s+lambs?", r"extra\s+heavy", r"super\s+heavy", r"mutton", r"yarding"],
         range_patterns,
     )
 
     heavy_lambs_range = category_range(
         text,
-        [r"heavy\\s+lambs?"],
-        [r"extra\\s+heavy", r"super\\s+heavy", r"heavy\\s+merinos?", r"mutton", r"yarding"],
+        [r"heavy\s+lambs?"],
+        [r"extra\s+heavy", r"super\s+heavy", r"heavy\s+merinos?", r"mutton", r"yarding"],
         range_patterns,
     )
 
     heavy_lambs_top = top_value([
-        r"heavy\\s+lambs?[^.]{0,300}?(?:reached|topped\\s+at|topped)\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
-        r"(?:super|supper)\\s+heavy[^.]{0,220}?(?:reached|topped\\s+at|topped)\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
+        r"heavy\s+lambs?[^.]{0,300}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"(?:super|supper)\s+heavy[^.]{0,220}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
     ], text)
 
     mutton = category_range(
@@ -129,20 +129,20 @@ def main():
         summary_response = requests.get(summary_url, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
         if summary_response.ok:
             summary_soup = BeautifulSoup(summary_response.text, "html.parser")
-            summary_text = re.sub(r"\\s+", " ", html.unescape(summary_soup.get_text(" ", strip=True))).strip()
+            summary_text = re.sub(r"\s+", " ", html.unescape(summary_soup.get_text(" ", strip=True))).strip()
 
             if light_lambs == "Not reported":
-                light_lambs = category_range(summary_text, [r"restockers?", r"store\\s+lambs?"], stops, range_patterns)
+                light_lambs = category_range(summary_text, [r"restockers?", r"store\s+lambs?"], stops, range_patterns)
             if trade_lambs == "Not reported":
-                trade_lambs = category_range(summary_text, [r"trade\\s+lambs?", r"trade\\s+to\\s+heavy\\s+lambs?", r"fresh\\s+medium\\s+to\\s+heavy\\s+trades?"], [r"heavy\\s+lambs?", r"extra\\s+heavy", r"super\\s+heavy", r"mutton", r"yarding"], range_patterns)
+                trade_lambs = category_range(summary_text, [r"trade\s+lambs?", r"trade\s+to\s+heavy\s+lambs?", r"fresh\s+medium\s+to\s+heavy\s+trades?"], [r"heavy\s+lambs?", r"extra\s+heavy", r"super\s+heavy", r"mutton", r"yarding"], range_patterns)
             if heavy_lambs_range == "Not reported":
-                heavy_lambs_range = category_range(summary_text, [r"heavy\\s+lambs?"], [r"extra\\s+heavy", r"super\\s+heavy", r"heavy\\s+merinos?", r"mutton", r"yarding"], range_patterns)
+                heavy_lambs_range = category_range(summary_text, [r"heavy\s+lambs?"], [r"extra\s+heavy", r"super\s+heavy", r"heavy\s+merinos?", r"mutton", r"yarding"], range_patterns)
             if mutton == "Not reported":
                 mutton = category_range(summary_text, [r"mutton"], [r"yarding"], range_patterns)
             if heavy_lambs_top == "Not reported":
                 heavy_lambs_top = top_value([
-                    r"heavy\\s+lambs?[^.]{0,300}?(?:reached|topped\\s+at|topped)\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
-                    r"(?:super|supper)\\s+heavy[^.]{0,220}?(?:reached|topped\\s+at|topped)\\s+\\$([\\d,]+)\\s*/?\\s*(?:head|hd)",
+                    r"heavy\s+lambs?[^.]{0,300}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+                    r"(?:super|supper)\s+heavy[^.]{0,220}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
                 ], summary_text)
     except Exception:
         pass
