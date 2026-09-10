@@ -1,8 +1,9 @@
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
 
 CROPCONNECT_URL = "https://cropconnect.com.au/cc/market/bids"
 
@@ -26,65 +27,119 @@ def prices_from_text(text):
     return [float(x.replace(",", "")) for x in re.findall(r"\$\s*([0-9][0-9,]*(?:\.\d+)?)", text)]
 
 
-def extract_rows(page):
-    selectors = [
-        "tr",
-        '[role="row"]',
-        ".ag-row",
-        ".MuiDataGrid-row",
-    ]
-    rows = []
+def candidate_texts(page):
+    """Collect rendered text from the main page and any iframes."""
+    texts = []
     seen = set()
-    for selector in selectors:
+    for frame in page.frames:
         try:
-            for text in page.locator(selector).all_inner_texts():
-                text = normalise(text)
-                if text and text not in seen:
-                    seen.add(text)
-                    rows.append(text)
+            text = normalise(frame.locator("body").inner_text(timeout=5000))
+            if text and text not in seen:
+                seen.add(text)
+                texts.append(text)
         except Exception:
             pass
-    return rows
+    return texts
 
 
 def fetch_highest_bid(location, grade):
     season = current_season()
+    network_json = []
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1600, "height": 1200})
+        context = browser.new_context(viewport={"width": 1600, "height": 1200})
+        page = context.new_page()
+
+        def capture_response(response):
+            # CropConnect is a SPA, so the useful bid data may arrive through
+            # an XHR/fetch rather than being present in the initial HTML.
+            ctype = (response.headers.get("content-type") or "").lower()
+            if "json" not in ctype:
+                return
+            try:
+                body = response.text()
+                if body and len(body) < 2_000_000:
+                    network_json.append((response.url, body))
+            except Exception:
+                pass
+
+        page.on("response", capture_response)
+
         try:
             page.goto(CROPCONNECT_URL, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(7000)
+            page.wait_for_timeout(12000)
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
 
-            rows = extract_rows(page)
-            if not rows:
-                # Some SPA layouts do not expose table rows. Use the rendered
-                # page text as a conservative fallback and keep the match local.
-                body = normalise(page.locator("body").inner_text(timeout=10000))
-                rows = [body]
+            # Give SPA/iframe content another moment to render.
+            page.wait_for_timeout(3000)
+            texts = candidate_texts(page)
 
-            candidates = []
             location_re = re.compile(rf"\b{re.escape(location)}\b", re.I)
             grade_re = re.compile(rf"\b{re.escape(grade)}\b", re.I)
             season_re = re.compile(rf"\b{re.escape(season)}\b")
+            candidates = []
 
-            for row in rows:
-                if not location_re.search(row) or not grade_re.search(row):
-                    continue
-                # Do not mix seasons. If a season is shown in the row, it must
-                # be the current season. If the page has no season label at all,
-                # the marketplace page itself is treated as the current-season view.
-                season_tokens = re.findall(r"\b\d{2}/\d{2}\b", row)
-                if season_tokens and not season_re.search(row):
-                    continue
-                prices = prices_from_text(row)
-                if prices:
-                    candidates.extend(prices)
+            # First use rendered text. This is the safest source because it is
+            # exactly what the CropConnect marketplace presents to the user.
+            for text in texts:
+                for chunk in re.split(r"\n|(?<=\$[0-9,]+)", text):
+                    row = normalise(chunk)
+                    if not location_re.search(row) or not grade_re.search(row):
+                        continue
+                    season_tokens = re.findall(r"\b\d{2}/\d{2}\b", row)
+                    if season_tokens and not season_re.search(row):
+                        continue
+                    prices = prices_from_text(row)
+                    if prices:
+                        candidates.extend(prices)
+
+            # If the UI doesn't expose rows cleanly, inspect JSON returned by
+            # the SPA. Only accept JSON that actually contains the requested
+            # location and grade, and only prices from the current season when
+            # a season field is present.
+            if not candidates:
+                for url, body in network_json:
+                    if not location_re.search(body) or not grade_re.search(body):
+                        continue
+                    try:
+                        data = json.loads(body)
+                    except Exception:
+                        continue
+                    blob = json.dumps(data, ensure_ascii=False)
+                    if not location_re.search(blob) or not grade_re.search(blob):
+                        continue
+                    if re.findall(r"\b\d{2}/\d{2}\b", blob) and not season_re.search(blob):
+                        continue
+                    # Price keys commonly used by marketplace APIs.
+                    for match in re.finditer(
+                        r'"(?:price|bidPrice|cashPrice|amount|value)"\s*:\s*([0-9]+(?:\.[0-9]+)?)',
+                        blob,
+                        re.I,
+                    ):
+                        try:
+                            candidates.append(float(match.group(1)))
+                        except ValueError:
+                            pass
 
             if not candidates:
+                # Print safe diagnostics into Actions logs so the next failed
+                # attempt tells us what CropConnect actually returned.
+                print(f"CropConnect diagnostic {location} {grade}: frames={len(page.frames)} json_responses={len(network_json)}")
+                for frame in page.frames:
+                    print(f"frame: {frame.url}")
+                for url, body in network_json[:20]:
+                    print(f"json: {url} :: {normalise(body)[:500]}")
+                for text in texts[:5]:
+                    print(f"page-text: {text[:1000]}")
                 return None, season
+
             return max(candidates), season
         finally:
+            context.close()
             browser.close()
 
 
@@ -119,7 +174,7 @@ def write_xml(location, grade, output_file, price, season):
 def update(location, grade, output_file):
     try:
         price, season = fetch_highest_bid(location, grade)
-    except (PlaywrightTimeoutError, Exception) as error:
+    except Exception as error:
         print(f"CropConnect fetch failed for {location} {grade}: {error}")
         price = None
         season = current_season()
