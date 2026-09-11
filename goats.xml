@@ -2,20 +2,19 @@
 <rss version="2.0">
   <channel>
     <title>NSW Goat OTH Price</title>
-    <link>https://www.mla.com.au/prices-markets/market-reports/goat/over-the-hooks-goat-indicators/</link>
-    <description>Latest NSW Over-the-Hooks Goat Price</description>
+    <link>https://www.mla.com.au/prices-markets/statistics/australian-goat-oth/</link>
+    <description>Latest MLA Eastern States goat Over-the-Hooks benchmark</description>
     <language>en-au</language>
-
     <item>
-      <title>NSW Goat OTH Price</title>
-      <link>https://www.mla.com.au/prices-markets/market-reports/goat/over-the-hooks-goat-indicators/</link>
-      <guid>nsw-goat-oth-price</guid>
-      <pubDate>Thu, 01 Jan 1970 00:00:00 +0000</pubDate>
+      <title>NSW Goat OTH — 16–20kg cwt</title>
+      <link>https://www.mla.com.au/prices-markets/statistics/australian-goat-oth/</link>
+      <guid>nsw-goat-oth-16-20kg</guid>
+      <pubDate>Fri, 11 Sep 2026 12:06:02 +0000</pubDate>
       <description><![CDATA[
-        <p><strong>Price:</strong> Pending update</p>
-        <p><strong>Details:</strong> NSW Over-the-Hooks Goat Indicator from MLA Weekly Report.</p>
+        <p><strong>Price:</strong> 177.3 c/kg cwt</p>
+        <p><strong>Benchmark:</strong> Eastern States 16–20kg cwt</p>
+        <p><strong>Source:</strong> Meat &amp; Livestock Australia (MLA)</p>
       ]]></description>
     </item>
-
   </channel>
 </rss>
