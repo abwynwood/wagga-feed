@@ -10,23 +10,39 @@ from bs4 import BeautifulSoup
 SOURCE_URL = "https://agoralivestock.com.au/saleyard-griffith-sheep/"
 OUTPUT_FILE = Path(__file__).with_name("griffith.xml")
 
+
 def get_text():
     response = requests.get(SOURCE_URL, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     return re.sub(r"\s+", " ", html.unescape(soup.get_text(" ", strip=True))).strip()
 
+
 def find(pattern, text):
     return re.search(pattern, text, re.IGNORECASE | re.DOTALL)
 
-def money_range(patterns, text):
+
+def money_range_from_match(match):
+    low = int(match.group(1).replace(",", ""))
+    high = int(match.group(2).replace(",", ""))
+    return "$%s/hd – $%s/hd" % (f"{low:,}", f"{high:,}")
+
+
+def first_money_range(patterns, text):
     for pattern in patterns:
         m = find(pattern, text)
         if m:
-            low = int(m.group(1).replace(",", ""))
-            high = int(m.group(2).replace(",", ""))
-            return "$%s/hd – $%s/hd" % (f"{low:,}", f"{high:,}")
+            return money_range_from_match(m)
     return "Not reported"
+
+
+def single_money(patterns, text):
+    for pattern in patterns:
+        m = find(pattern, text)
+        if m:
+            return "$%s/hd" % f"{int(m.group(1).replace(',', '')):,}"
+    return "Not reported"
+
 
 def category_range(text, category_patterns, stop_patterns, range_patterns):
     """Search only inside one sheep category to prevent cross-category matches."""
@@ -44,7 +60,7 @@ def category_range(text, category_patterns, stop_patterns, range_patterns):
         m = find(stop_pattern, tail)
         if m:
             tail = tail[:m.start()]
-    return money_range(range_patterns, tail)
+    return first_money_range(range_patterns, tail)
 
 
 def top_value(patterns, text):
@@ -62,25 +78,39 @@ def market_direction(text):
         return "SOFTER"
     return "STEADY"
 
+
+def mutton_or_ewes_range(text):
+    """Find the mutton/ewes category regardless of which heading the source uses."""
+    return category_range(
+        text,
+        [r"\bmutton\b", r"\bewes?\b"],
+        [r"yarding"],
+        [
+            r"(?:mutton|ewes?)[^.]{0,350}?crossbred\s+ewes?\s+reaching\s+\$([\d,]+)[^.]{0,120}?bare\s+shorn\s+Merino\s+ewes?\s+reaching\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+            r"(?:mutton|ewes?)[^.]{0,350}?ranged\s+between\s+\$([\d,]+)\s+and\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+            r"(?:mutton|ewes?)[^.]{0,250}?ranged\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        ],
+    )
+
+
 def main():
     text = get_text()
     date_match = find(r"Report Date:\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})", text)
     yarding_match = find(r"Total Yarding:\s*([\d,]+)", text)
     if not date_match or not yarding_match:
-        # Do not publish a partial/new feed. The existing XML is retained by
-        # the workflow if this run fails, so the DAKboard keeps one complete
-        # sale's data and its matching date.
         raise RuntimeError("Agora Griffith date/yarding not found")
 
-    # Treat the whole sheep report as one atomic record. If Agora changes its
-    # page layout and we cannot even find the expected category headings, fail
-    # the update rather than mixing old prices with a new sale date.
+    # The Griffith report is prose rather than a table. Parse each category
+    # from the wording used in the current sale report, rather than searching
+    # for a generic "range" after the word lambs. Generic matching caused the
+    # same trade range to be copied into every lamb category on DAKboard.
     category_markers = [
         r"restockers+lambs?",
         r"stores+lambs?",
         r"trades+lambs?",
         r"heavys+lambs?",
         r"mutton",
+        r"ewes?",
     ]
     if sum(bool(find(pattern, text)) for pattern in category_markers) < 3:
         raise RuntimeError("Agora Griffith sheep category headings not recognised; retaining previous complete sale")
@@ -116,7 +146,7 @@ def main():
     heavy_lambs_range = category_range(
         text,
         [r"heavy\s+lambs?"],
-        [r"extra\s+heavy", r"super\s+heavy", r"heavy\s+merinos?", r"mutton", r"yarding"],
+        [r"extra\s+heavy", r"super\s+heavy", r"heavy\s+merinos?", r"mutton", r"ewes?", r"yarding"],
         range_patterns,
     )
 
@@ -125,12 +155,7 @@ def main():
         r"(?:super|supper)\s+heavy[^.]{0,220}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
     ], text)
 
-    mutton = category_range(
-        text,
-        [r"mutton"],
-        [r"yarding"],
-        range_patterns,
-    )
+    mutton = mutton_or_ewes_range(text)
 
     # Agora's Griffith page can lag behind the matching market-summary page.
     # Use it only to fill fields for THIS SAME report date. We never carry an
@@ -145,7 +170,6 @@ def main():
         if summary_response.ok:
             summary_soup = BeautifulSoup(summary_response.text, "html.parser")
             summary_text = re.sub(r"\s+", " ", html.unescape(summary_soup.get_text(" ", strip=True))).strip()
-
             if light_lambs == "Not reported":
                 light_lambs = category_range(summary_text, [r"restockers?", r"store\s+lambs?"], stops, range_patterns)
             if light_lambs == "Not reported":
@@ -153,9 +177,9 @@ def main():
             # Restocker and Trade are the same reported category/price at Griffith.
             trade_lambs = light_lambs
             if heavy_lambs_range == "Not reported":
-                heavy_lambs_range = category_range(summary_text, [r"heavy\s+lambs?"], [r"extra\s+heavy", r"super\s+heavy", r"heavy\s+merinos?", r"mutton", r"yarding"], range_patterns)
+                heavy_lambs_range = category_range(summary_text, [r"heavy\s+lambs?"], [r"extra\s+heavy", r"super\s+heavy", r"heavy\s+merinos?", r"mutton", r"ewes?", r"yarding"], range_patterns)
             if mutton == "Not reported":
-                mutton = category_range(summary_text, [r"mutton"], [r"yarding"], range_patterns)
+                mutton = mutton_or_ewes_range(summary_text)
             if heavy_lambs_top == "Not reported":
                 heavy_lambs_top = top_value([
                     r"heavy\s+lambs?[^.]{0,300}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
@@ -185,7 +209,7 @@ def main():
         "Restocker Lambs Range: " + light_lambs,
         "Trade Lambs Range: " + trade_lambs,
         heavy_lambs_label + heavy_lambs_value,
-        "Mutton Range: " + mutton,
+        "Mutton/Ewes Range: " + mutton,
         "Yarding: " + yarding_match.group(1) + " head",
         "Market: " + market,
         "Summary: " + summary,
@@ -202,6 +226,7 @@ def main():
         "<description><![CDATA[" + description.replace("\n", "<br>") + "]]></description>",
     )
     OUTPUT_FILE.write_text(xml, encoding="utf-8")
+
 
 if __name__ == "__main__":
     try:
