@@ -28,6 +28,9 @@ jobs:
         pip install requests beautifulsoup4 playwright
         python -m playwright install --with-deps chromium
 
+    - name: Test Nyngan and Griffith BAR1
+      run: python test_bar1_locations.py
+
     - name: Update Griffith Sheep Report
       run: python update_griffith.py
 
