@@ -63,14 +63,18 @@ def fetch_goat_price():
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(accept_downloads=True)
         try:
-            page.goto(REPORT_URL, wait_until="networkidle", timeout=120000)
-            page.wait_for_timeout(3000)
+            # Do not wait for networkidle: the MLA report keeps analytics/background
+            # requests open indefinitely, which caused the previous 120-second timeout.
+            page.goto(REPORT_URL, wait_until="domcontentloaded", timeout=60000)
 
             button = page.get_by_role("button", name=re.compile(r"export data", re.I))
             if button.count() == 0:
                 button = page.get_by_text(re.compile(r"export data", re.I))
             if button.count() == 0:
                 raise RuntimeError("MLA Goat OTH Export Data button not found")
+
+            button.first.wait_for(state="visible", timeout=30000)
+            page.wait_for_timeout(5000)
 
             with page.expect_download(timeout=60000) as download_info:
                 button.first.click()
