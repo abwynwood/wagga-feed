@@ -11,6 +11,12 @@ MLA_STATISTICS_URL = "https://www.mla.com.au/prices-markets/statistics/australia
 OUTPUT_FILE = Path(__file__).with_name("goats.xml")
 
 
+WEIGHT_PATTERN = re.compile(
+    r"16\s*\.?1?\s*(?:kg\s*)?(?:-|–|—|to)\s*20\s*\.?0?\s*kg?",
+    re.I,
+)
+
+
 def normalise(text):
     return re.sub(r"\s+", " ", str(text or "")).strip().lower()
 
@@ -18,44 +24,79 @@ def normalise(text):
 def is_target_row(row):
     text = normalise(" ".join(row))
     compact = text.replace(" ", "")
-    return (
-        ("16.1-20" in compact or "16-20" in compact or "16.1–20" in text or "16–20" in text)
-        and ("kg" in text or "cwt" in text)
-        and any(term in text for term in ("goat", "oth", "over the hooks", "over-the-hooks"))
+    return bool(
+        WEIGHT_PATTERN.search(text)
+        or "16.1-20" in compact
+        or "16.1–20" in text
+        or "16-20kg" in compact
+        or "16–20kg" in text
     )
 
 
-def parse_price(row):
-    preferred_indexes = []
+def numeric_values(row):
+    values = []
     for index, cell in enumerate(row):
-        label = normalise(cell)
-        if any(term in label for term in ("this week", "current", "tw", "price", "average")):
-            preferred_indexes.append(index)
-
-    candidates = []
-    for index in preferred_indexes + list(range(len(row))):
-        if index >= len(row):
+        value = str(cell).strip().replace(",", "")
+        value = value.replace("¢", "").replace("c/kg", "").replace("c/kg cwt", "")
+        match = re.fullmatch(r"(?:\$\s*)?(\d+(?:\.\d+)?)", value)
+        if not match:
             continue
-        value = str(row[index]).replace(",", "")
-        match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*", value)
-        if match:
-            number = float(match.group(1))
-            if 50 < number < 2000:
-                candidates.append(number)
+        number = float(match.group(1))
+        if 0 < number < 2000:
+            # If the export expresses the price in dollars/kg, convert to cents/kg.
+            if number < 20:
+                number *= 100
+            values.append((index, number))
+    return values
 
-    return candidates[0] if candidates else None
+
+def parse_price(row):
+    values = numeric_values(row)
+    if not values:
+        return None
+
+    # Prefer a column explicitly labelled as the current/this-week price.
+    labels = [normalise(cell) for cell in row]
+    preferred = []
+    for index, number in values:
+        nearby = " ".join(labels[max(0, index - 2): min(len(labels), index + 3)])
+        if any(term in nearby for term in ("this week", "current", "latest", "price", "average", "week")):
+            preferred.append(number)
+    if preferred:
+        return round(preferred[0], 1)
+
+    # Otherwise the first plausible price in the matching weight row is the
+    # current value in MLA's export layout.
+    return round(values[0][1], 1)
 
 
 def extract_csv_price(content):
     text = content.decode("utf-8-sig", errors="replace")
     rows = list(csv.reader(io.StringIO(text)))
+
     for row in rows:
         if is_target_row(row):
             price = parse_price(row)
             if price is not None:
-                print("MLA goat OTH CSV row:", row)
-                return round(price, 1)
-    raise RuntimeError("MLA goat OTH 16.1–20kg row or current price not found in export")
+                print("MLA goat OTH target row:", row)
+                print(f"MLA goat OTH parsed 16–20kg price: {price:g} c/kg cwt")
+                return price
+
+    # Some MLA exports split the weight label across adjacent cells. Try joining
+    # every row with a visible separator as a second pass.
+    for row in rows:
+        joined = " | ".join(str(cell) for cell in row)
+        if re.search(r"16\s*\.?(?:1)?\s*(?:kg\s*)?(?:-|–|—|to)\s*20", joined, re.I):
+            price = parse_price(row)
+            if price is not None:
+                print("MLA goat OTH fallback row:", row)
+                return price
+
+    sample = [row for row in rows if any(ch.isdigit() for ch in " ".join(row))][:12]
+    print("MLA goat OTH CSV rows inspected; no 16–20kg row matched:")
+    for row in sample:
+        print(row)
+    raise RuntimeError("MLA goat OTH 16–20kg row/current price not found in export")
 
 
 def fetch_goat_price():
@@ -63,8 +104,6 @@ def fetch_goat_price():
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page(accept_downloads=True)
         try:
-            # Do not wait for networkidle: the MLA report keeps analytics/background
-            # requests open indefinitely, which caused the previous 120-second timeout.
             page.goto(REPORT_URL, wait_until="domcontentloaded", timeout=60000)
 
             button = page.get_by_role("button", name=re.compile(r"export data", re.I))
@@ -122,7 +161,5 @@ if __name__ == "__main__":
         print(f"MLA goat OTH: {price:g} c/kg cwt")
         update_xml(price)
     except Exception as error:
-        if OUTPUT_FILE.exists():
-            print("Goat update failed; retaining last known price:", error)
-        else:
-            raise
+        print("Goat update failed:", error)
+        raise
