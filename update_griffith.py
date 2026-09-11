@@ -22,10 +22,13 @@ def find(pattern, text):
     return re.search(pattern, text, re.IGNORECASE | re.DOTALL)
 
 
-def money_range_from_match(match):
-    low = int(match.group(1).replace(",", ""))
-    high = int(match.group(2).replace(",", ""))
+def money_range(low, high):
+    low, high = sorted((int(low.replace(",", "")), int(high.replace(",", ""))))
     return "$%s/hd – $%s/hd" % (f"{low:,}", f"{high:,}")
+
+
+def money_range_from_match(match):
+    return money_range(match.group(1), match.group(2))
 
 
 def first_money_range(patterns, text):
@@ -44,31 +47,48 @@ def single_money(patterns, text):
     return "Not reported"
 
 
-def category_range(text, category_patterns, stop_patterns, range_patterns):
-    """Search only inside one sheep category to prevent cross-category matches."""
-    category = None
-    for pattern in category_patterns:
-        m = find(pattern, text)
+def section_after(text, headings, stops):
+    """Return the text belonging to one category, stopping at the next category."""
+    start = None
+    for heading in headings:
+        m = find(heading, text)
+        if m and (start is None or m.start() < start.start()):
+            start = m
+    if not start:
+        return ""
+
+    section = text[start.end():]
+    end_positions = []
+    for stop in stops:
+        m = find(stop, section)
         if m:
-            category = m
-            break
-    if not category:
+            end_positions.append(m.start())
+    if end_positions:
+        section = section[:min(end_positions)]
+    return section
+
+
+def category_price(section, patterns):
+    return first_money_range(patterns, section)
+
+
+def mutton_or_ewes_range(text):
+    """Mutton and ewes are the same DAKboard category; accept either heading."""
+    section = section_after(
+        text,
+        [r"\bmutton\b", r"\bewes?\b"],
+        [r"yarding\b", r"market reporter\b", r"summary:\b"],
+    )
+    if not section:
         return "Not reported"
 
-    tail = text[category.end():]
-    for stop_pattern in stop_patterns:
-        m = find(stop_pattern, tail)
-        if m:
-            tail = tail[:m.start()]
-    return first_money_range(range_patterns, tail)
-
-
-def top_value(patterns, text):
-    for pattern in patterns:
-        m = find(pattern, text)
-        if m:
-            return "$%s/hd" % f"{int(m.group(1).replace(',', '')):,}"
-    return "Not reported"
+    patterns = [
+        r"ranged\s+between\s+\$([\d,]+)\s+and\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"ranged\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"(?:most|mutton|ewes?)[^.]{0,180}?\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"(?:crossbred|first\s+cross)[^.]{0,120}?(?:reached|sold\s+to)\s+\$([\d,]+)[^.]{0,120}?(?:Merino|merinos?)[^.]{0,100}?(?:reached|sold\s+to)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+    ]
+    return category_price(section, patterns)
 
 
 def market_direction(text):
@@ -79,20 +99,6 @@ def market_direction(text):
     return "STEADY"
 
 
-def mutton_or_ewes_range(text):
-    """Find the mutton/ewes category regardless of which heading the source uses."""
-    return category_range(
-        text,
-        [r"\bmutton\b", r"\bewes?\b"],
-        [r"yarding"],
-        [
-            r"(?:mutton|ewes?)[^.]{0,350}?crossbred\s+ewes?\s+reaching\s+\$([\d,]+)[^.]{0,120}?bare\s+shorn\s+Merino\s+ewes?\s+reaching\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-            r"(?:mutton|ewes?)[^.]{0,350}?ranged\s+between\s+\$([\d,]+)\s+and\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-            r"(?:mutton|ewes?)[^.]{0,250}?ranged\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        ],
-    )
-
-
 def main():
     text = get_text()
     date_match = find(r"Report Date:\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})", text)
@@ -100,66 +106,55 @@ def main():
     if not date_match or not yarding_match:
         raise RuntimeError("Agora Griffith date/yarding not found")
 
-    # The Griffith report is prose rather than a table. Parse each category
-    # from the wording used in the current sale report, rather than searching
-    # for a generic "range" after the word lambs. Generic matching caused the
-    # same trade range to be copied into every lamb category on DAKboard.
-    category_markers = [
-        r"restockers+lambs?",
-        r"stores+lambs?",
-        r"trades+lambs?",
-        r"heavys+lambs?",
-        r"mutton",
-        r"ewes?",
-    ]
-    if sum(bool(find(pattern, text)) for pattern in category_markers) < 3:
-        raise RuntimeError("Agora Griffith sheep category headings not recognised; retaining previous complete sale")
-
-    # Keep each sheep category isolated. Agora often puts several categories
-    # in the same paragraph, so broad regexes can otherwise copy one category's
-    # range into another.
-    stops = [
-        r"trade\s+lambs?",
-        r"heavy\s+lambs?",
-        r"extra\s+heavy",
-        r"super\s+heavy",
-        r"mutton",
-        r"yarding",
-    ]
-    range_patterns = [
-        r"(?:ranged\s+)?from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"range\s+of\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+    # Each category is extracted from its own section. This is deliberately
+    # stricter than searching for the first dollar range after "lambs", because
+    # the Griffith report often discusses several lamb classes in one paragraph.
+    category_stops = [
+        r"\btrade\s+(?:weight\s+)?lambs?\b",
+        r"\btrade\s+to\s+(?:heavy\s+)?lambs?\b",
+        r"\bheavy\s+(?:weight\s+)?lambs?\b",
+        r"\bextra\s+heavy\b",
+        r"\bsuper\s+heavy\b",
+        r"\bmutton\b",
+        r"\bewes?\b",
+        r"\byarding\b",
+        r"\bmarket reporter\b",
     ]
 
-    light_lambs = category_range(
+    restocker_section = section_after(
         text,
-        [r"restockers?", r"store\s+lambs?"],
-        stops,
-        range_patterns,
+        [r"\brestocker\s+lambs?\b", r"\brestockers?\b", r"\bstore\s+lambs?\b"],
+        [s for s in category_stops if not re.search(r"restocker|store", s, re.I)],
     )
+    restocker = category_price(restocker_section, [
+        r"(?:sold|selling|made|returned)\s+(?:from\s+)?\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"ranged\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+    ])
 
-    # Agora reports Restocker and Trade lambs together at Griffith.
-    # Use the same reported range for both categories rather than trying to
-    # scrape Trade separately (which can incorrectly return "Not reported").
-    trade_lambs = light_lambs
-
-    heavy_lambs_range = category_range(
+    trade_section = section_after(
         text,
-        [r"heavy\s+lambs?"],
-        [r"extra\s+heavy", r"super\s+heavy", r"heavy\s+merinos?", r"mutton", r"ewes?", r"yarding"],
-        range_patterns,
+        [r"\btrade\s+(?:weight\s+)?lambs?\b", r"\btrade\s+to\s+(?:heavy\s+)?lambs?\b"],
+        [r"\bheavy\s+(?:weight\s+)?lambs?\b", r"\bextra\s+heavy\b", r"\bsuper\s+heavy\b", r"\bmutton\b", r"\bewes?\b", r"\byarding\b"],
     )
+    trade = category_price(trade_section, [
+        r"ranged\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"(?:sold|selling|made|returned)\s+(?:from\s+)?\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+    ])
 
-    heavy_lambs_top = top_value([
-        r"heavy\s+lambs?[^.]{0,300}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"(?:super|supper)\s+heavy[^.]{0,220}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-    ], text)
+    heavy_section = section_after(
+        text,
+        [r"\bheavy\s+(?:weight\s+)?lambs?\b", r"\bheavy\s+to\s+heavy\s+lambs?\b"],
+        [r"\bmutton\b", r"\bewes?\b", r"\byarding\b", r"\bmarket reporter\b"],
+    )
+    heavy = category_price(heavy_section, [
+        r"ranged\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        r"(?:sold|selling|made|returned)\s+(?:from\s+)?\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+    ])
 
     mutton = mutton_or_ewes_range(text)
 
-    # Agora's Griffith page can lag behind the matching market-summary page.
-    # Use it only to fill fields for THIS SAME report date. We never carry an
-    # individual price forward from an older sale.
+    # If the sale page has not yet exposed a separate category price, consult
+    # the same-date market summary. Never use an older report to fill a value.
     try:
         raw_date = date_match.group(1)
         clean_date = re.sub(r"(st|nd|rd|th)", "", raw_date)
@@ -170,30 +165,19 @@ def main():
         if summary_response.ok:
             summary_soup = BeautifulSoup(summary_response.text, "html.parser")
             summary_text = re.sub(r"\s+", " ", html.unescape(summary_soup.get_text(" ", strip=True))).strip()
-            if light_lambs == "Not reported":
-                light_lambs = category_range(summary_text, [r"restockers?", r"store\s+lambs?"], stops, range_patterns)
-            if light_lambs == "Not reported":
-                light_lambs = category_range(summary_text, [r"restockers?", r"store\s+lambs?"], stops, range_patterns)
-            # Restocker and Trade are the same reported category/price at Griffith.
-            trade_lambs = light_lambs
-            if heavy_lambs_range == "Not reported":
-                heavy_lambs_range = category_range(summary_text, [r"heavy\s+lambs?"], [r"extra\s+heavy", r"super\s+heavy", r"heavy\s+merinos?", r"mutton", r"ewes?", r"yarding"], range_patterns)
+            if restocker == "Not reported":
+                restocker_section = section_after(summary_text, [r"\brestocker\s+lambs?\b", r"\brestockers?\b", r"\bstore\s+lambs?\b"], [r"\btrade\b", r"\bheavy\b", r"\bmutton\b", r"\bewes?\b"])
+                restocker = category_price(restocker_section, [r"(?:from|to)\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)", r"sold\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)"])
+            if trade == "Not reported":
+                trade_section = section_after(summary_text, [r"\btrade\s+(?:weight\s+)?lambs?\b", r"\btrade\b"], [r"\bheavy\b", r"\bmutton\b", r"\bewes?\b"])
+                trade = category_price(trade_section, [r"ranged\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)", r"sold\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)"])
+            if heavy == "Not reported":
+                heavy_section = section_after(summary_text, [r"\bheavy\s+(?:weight\s+)?lambs?\b", r"\bheavy\b"], [r"\bmutton\b", r"\bewes?\b"])
+                heavy = category_price(heavy_section, [r"ranged\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)", r"sold\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)"])
             if mutton == "Not reported":
                 mutton = mutton_or_ewes_range(summary_text)
-            if heavy_lambs_top == "Not reported":
-                heavy_lambs_top = top_value([
-                    r"heavy\s+lambs?[^.]{0,300}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-                    r"(?:super|supper)\s+heavy[^.]{0,220}?(?:reached|topped\s+at|topped)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-                ], summary_text)
     except Exception:
         pass
-
-    if heavy_lambs_range != "Not reported":
-        heavy_lambs_value = heavy_lambs_range
-        heavy_lambs_label = "Heavy Lambs Range: "
-    else:
-        heavy_lambs_value = heavy_lambs_top
-        heavy_lambs_label = "Heavy Lambs Top: "
 
     market = market_direction(text)
     summary = {"FIRM": "Prices firm to stronger.", "SOFTER": "Prices softer across the market.", "STEADY": "Prices mostly steady."}[market]
@@ -206,9 +190,9 @@ def main():
     ET.SubElement(item, "title").text = "Griffith Sheep Sale — " + date_match.group(1)
     description = "\n".join([
         "GRIFFITH SHEEP SALE — " + date_match.group(1), "",
-        "Restocker Lambs Range: " + light_lambs,
-        "Trade Lambs Range: " + trade_lambs,
-        heavy_lambs_label + heavy_lambs_value,
+        "Restocker Lambs Range: " + restocker,
+        "Trade Lambs Range: " + trade,
+        "Heavy Lambs Range: " + heavy,
         "Mutton/Ewes Range: " + mutton,
         "Yarding: " + yarding_match.group(1) + " head",
         "Market: " + market,
@@ -218,11 +202,11 @@ def main():
     ET.SubElement(item, "pubDate").text = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
     ET.SubElement(item, "guid").text = SOURCE_URL
 
-    # DAKboard's RSS renderer collapses ordinary newlines, so use HTML breaks.
     ET.ElementTree(root).write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
     xml = OUTPUT_FILE.read_text(encoding="utf-8")
+    escaped_description = description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     xml = xml.replace(
-        "<description>" + description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") + "</description>",
+        "<description>" + escaped_description + "</description>",
         "<description><![CDATA[" + description.replace("\n", "<br>") + "]]></description>",
     )
     OUTPUT_FILE.write_text(xml, encoding="utf-8")
