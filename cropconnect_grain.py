@@ -14,7 +14,7 @@ MARKET_URL = f"{BASE}/cc/market/bids"
 
 TARGETS = {
     "Hillston APW1": ("Hillston", "APW1"),
-    "Hillston BAR1": ("Hillston", "BAR1"),
+    "Lake Cargelligo BAR1": ("Lake Cargelligo", "BAR1"),
     "Condobolin APW1": ("Condobolin", "APW1"),
     "Condobolin BAR1": ("Condobolin", "BAR1"),
 }
@@ -62,9 +62,9 @@ def fetch_site_map():
     for row in rows:
         site_no = row.get("SiteNo") or row.get("Site") or row.get("SiteID")
         text = " ".join(str(v) for v in row.values())
-        for location in ("hillston", "condobolin"):
+        for location in ("hillston", "lake cargelligo", "condobolin"):
             if normalise(location) in normalise(text) and site_no is not None:
-                site_map[location] = str(site_no)
+                site_map[normalise(location)] = str(site_no)
     print(f"CropConnect API: Site rows={len(rows)}, site map={site_map}")
     return site_map
 
@@ -265,7 +265,7 @@ def browser_fallback(season, site_map):
         rows.extend(as_rows(payload))
     if rows:
         print(f"CropConnect browser sample keys: {sorted(rows[0].keys())}")
-        for location in ("Hillston", "Condobolin"):
+        for location in ("Hillston", "Condobolin", "Lake Cargelligo"):
             candidates = [r for r in rows if normalise(location) in normalise(row_values_text(r))]
             print(f"CropConnect browser diagnostic: {location} text-matches={len(candidates)}")
             for row in candidates[:3]:
