@@ -277,7 +277,7 @@ def write_xml(target, output, season, filename):
     now = datetime.now(timezone.utc)
     pub_date = format_datetime(now, usegmt=True)
     slug = normalise(target)
-    description = f"<strong>{target}</strong><br>{output}<br>Season {season}"
+    description = f"{output}<br>Season {season}"
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
