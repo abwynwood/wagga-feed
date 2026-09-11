@@ -94,6 +94,9 @@ def fetch_all_bids():
             payload = response.json()
             page_rows = as_rows(payload)
             rows.extend(page_rows)
+            if skip == 0 and page_rows:
+                print(f"CropConnect API: AllBidsSet bid keys={sorted(page_rows[0].keys())}")
+                print(f"CropConnect API: AllBidsSet sample={page_rows[0]}")
             if isinstance(payload, dict):
                 data = payload.get("d")
                 if isinstance(data, dict) and data.get("__count") is not None:
@@ -128,12 +131,27 @@ def row_value(row, aliases):
     return None
 
 
+def values_for_key_tokens(row, tokens):
+    tokens = tuple(normalise(token) for token in tokens)
+    values = []
+    for key, value in row.items():
+        key_norm = normalise(key)
+        if any(token in key_norm for token in tokens):
+            values.append(value)
+    return values
+
+
 def row_values_text(row):
     return " ".join(str(v) for v in row.values())
 
 
 def price_from_row(row):
     value = row_value(row, ("Price", "BidPrice", "PricePerTonne", "PricePerTon"))
+    if value is None:
+        for candidate in values_for_key_tokens(row, ("price",)):
+            if candidate is not None:
+                value = candidate
+                break
     if value is None:
         return None
     match = re.search(r"-?\d+(?:\.\d+)?", str(value).replace(",", ""))
@@ -152,13 +170,16 @@ def grade_matches(value, grade):
 
 
 def location_or_site_matches(row, location, site_no):
-    explicit = row_value(row, ("SiteNo", "Site", "SiteID", "SiteNumber", "Location", "SiteName"))
+    explicit = row_value(row, ("SiteNo", "Site", "SiteID", "SiteNumber", "Location", "SiteName", "SiteDescr", "SiteDescription"))
     if explicit is not None:
         value = normalise(explicit)
         if value == normalise(site_no) or value == normalise(location):
             return True
-    text = normalise(row_values_text(row))
-    return normalise(location) in text or (site_no is not None and normalise(site_no) in text)
+    for value in values_for_key_tokens(row, ("site", "location")):
+        value_norm = normalise(value)
+        if value_norm == normalise(site_no) or value_norm == normalise(location):
+            return True
+    return False
 
 
 def find_bids(rows, site_map, season):
@@ -169,12 +190,19 @@ def find_bids(rows, site_map, season):
         for row in rows:
             if not location_or_site_matches(row, location, site_no):
                 continue
-            grade_value = row_value(row, ("Grade", "GradeCode", "CommodityGrade", "ProductGrade"))
-            if grade_value is None or not grade_matches(grade_value, grade):
+
+            grade_value = row_value(row, ("Grade", "GradeCode", "CommodityGrade", "ProductGrade", "GradeDesc", "GradeDescription"))
+            grade_candidates = [grade_value] if grade_value is not None else []
+            grade_candidates.extend(values_for_key_tokens(row, ("grade",)))
+            if not any(grade_matches(value, grade) for value in grade_candidates):
                 continue
-            season_value = row_value(row, ("SeasonYear", "Season", "SeasonYr", "SeasonCode", "CropYear"))
-            if season_value is None or not season_matches(season_value, season):
+
+            season_value = row_value(row, ("SeasonYear", "Season", "SeasonYr", "SeasonCode", "CropYear", "SeasonDesc", "SeasonDescription"))
+            season_candidates = [season_value] if season_value is not None else []
+            season_candidates.extend(values_for_key_tokens(row, ("season", "cropyear")))
+            if not any(season_matches(value, season) for value in season_candidates):
                 continue
+
             price = price_from_row(row)
             if price is not None:
                 prices.append(price)
