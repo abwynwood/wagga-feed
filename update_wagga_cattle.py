@@ -41,21 +41,17 @@ def main():
     yarding_match = find(r"Total Yarding:\s*([\d,]+)", text)
     if not date_match or not yarding_match:
         raise RuntimeError("Agora Wagga cattle date/yarding not found")
-
     feeder = cents_range([
         r"Light feeder steers[^.]{0,120}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
         r"Medium weight feeder steers[^.]{0,120}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
         r"Heavy feeder steers[^.]{0,120}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
     ], text)
-
     cows = cents_range([
         r"heavy cows[^.]{0,100}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
         r"leaner cows[^.]{0,100}?from ([\d,]+)\s*(?:to|-|–)\s*([\d,]+)c/kg",
     ], text)
-
     market = market_direction(text)
     summary = {"FIRM": "Market firm to stronger.", "SOFTER": "Market softer.", "STEADY": "Market mostly steady."}[market]
-
     root = ET.Element("rss", version="2.0")
     channel = ET.SubElement(root, "channel")
     ET.SubElement(channel, "title").text = "Wagga Cattle Sale"
@@ -63,7 +59,6 @@ def main():
     item = ET.SubElement(channel, "item")
     ET.SubElement(item, "title").text = "Wagga Cattle Sale — " + date_match.group(1)
     description = "\n".join([
-        "WAGGA CATTLE SALE — " + date_match.group(1), "",
         "Feeder Steers: " + feeder,
         "Cows: " + cows, "",
         "Yarding: " + yarding_match.group(1) + " head",
@@ -73,15 +68,10 @@ def main():
     ET.SubElement(item, "description").text = description
     ET.SubElement(item, "pubDate").text = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
     ET.SubElement(item, "guid").text = SOURCE_URL
-
-    # DAKboard's RSS renderer collapses ordinary newlines, so use HTML breaks.
     ET.ElementTree(root).write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
     xml = OUTPUT_FILE.read_text(encoding="utf-8")
     escaped_description = description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    xml = xml.replace(
-        "<description>" + escaped_description + "</description>",
-        "<description><![CDATA[" + description.replace("\n", "<br>") + "]]></description>",
-    )
+    xml = xml.replace("<description>" + escaped_description + "</description>", "<description><![CDATA[" + description.replace("\n", "<br>") + "]]></description>")
     OUTPUT_FILE.write_text(xml, encoding="utf-8")
 
 if __name__ == "__main__":
