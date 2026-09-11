@@ -1,99 +1,89 @@
+import csv
+import io
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
+from playwright.sync_api import sync_playwright
 
-API_BASE = "https://api-mlastatistics.mla.com.au"
-MLA_STATISTICS_URL = "https://www.mla.com.au/prices-markets/statistics/"
+REPORT_URL = "https://app.nlrsreports.mla.com.au/statistics/nlrs-goat-oth/"
+MLA_STATISTICS_URL = "https://www.mla.com.au/prices-markets/statistics/australian-goat-oth/"
 OUTPUT_FILE = Path(__file__).with_name("goats.xml")
-HEADERS = {"User-Agent": "wagga-feed/1.0", "Accept": "application/json"}
 
 
-def get_json(path, params=None):
-    response = requests.get(API_BASE + path, params=params, headers=HEADERS, timeout=30)
-    response.raise_for_status()
-    return response.json()
+def normalise(text):
+    return re.sub(r"\s+", " ", str(text or "")).strip().lower()
 
 
-def walk_objects(value):
-    if isinstance(value, dict):
-        yield value
-        for child in value.values():
-            yield from walk_objects(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from walk_objects(child)
-
-
-def text_of(obj):
-    return " ".join(str(v) for v in obj.values() if isinstance(v, (str, int, float)))
-
-
-def number_from_obj(obj):
-    preferred = ("average", "avg", "averageprice", "avgprice", "price", "value", "indicatorvalue", "indicator_value", "avgvalue", "avg_value")
-    for wanted in preferred:
-        for key, value in obj.items():
-            if str(key).lower() == wanted:
-                if isinstance(value, (int, float)):
-                    return float(value)
-                if isinstance(value, str):
-                    match = re.search(r"-?\d+(?:\.\d+)?", value.replace(",", ""))
-                    if match:
-                        return float(match.group(0))
-    return None
-
-
-def date_key(obj):
-    for key, value in obj.items():
-        if any(term in str(key).lower() for term in ("date", "period", "week")) and isinstance(value, str):
-            match = re.search(r"(20\d{2})[-/]?(\d{2})[-/]?(\d{2})", value)
-            if match:
-                return match.group(0)
-    return ""
-
-
-def is_goat_row(obj):
-    text = text_of(obj).lower()
-    return "goat" in text and ("over the hooks" in text or "over-the-hooks" in text or "oth" in text or "16-20" in text.replace(" ", "") or "16–20" in text or "16 to 20" in text)
-
-
-def is_16_20_row(obj):
-    text = text_of(obj).lower()
+def is_target_row(row):
+    text = normalise(" ".join(row))
     compact = text.replace(" ", "")
-    return (("16" in compact and "20" in compact and ("kg" in compact or "cwt" in compact)) or "16-20" in compact or "16–20" in text or "16 to 20" in text)
+    return (
+        ("16.1-20" in compact or "16-20" in compact or "16.1–20" in text or "16–20" in text)
+        and ("kg" in text or "cwt" in text)
+        and any(term in text for term in ("goat", "oth", "over the hooks", "over-the-hooks"))
+    )
+
+
+def parse_price(row):
+    preferred_indexes = []
+    for index, cell in enumerate(row):
+        label = normalise(cell)
+        if any(term in label for term in ("this week", "current", "tw", "price", "average")):
+            preferred_indexes.append(index)
+
+    candidates = []
+    for index in preferred_indexes + list(range(len(row))):
+        if index >= len(row):
+            continue
+        value = str(row[index]).replace(",", "")
+        match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*", value)
+        if match:
+            number = float(match.group(1))
+            if 50 < number < 2000:
+                candidates.append(number)
+
+    return candidates[0] if candidates else None
+
+
+def extract_csv_price(content):
+    text = content.decode("utf-8-sig", errors="replace")
+    rows = list(csv.reader(io.StringIO(text)))
+    for row in rows:
+        if is_target_row(row):
+            price = parse_price(row)
+            if price is not None:
+                print("MLA goat OTH CSV row:", row)
+                return round(price, 1)
+    raise RuntimeError("MLA goat OTH 16.1–20kg row or current price not found in export")
 
 
 def fetch_goat_price():
-    # MLA's published NSW benchmark is the Eastern States goat OTH indicator.
-    # Use the 16–20kg cwt category used in NSW DPIRD reporting.
-    attempts = [
-        {"page": 1, "pageSize": 200},
-        {"page": 1, "page_size": 200},
-        None,
-    ]
-    all_candidates = []
-    for params in attempts:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(accept_downloads=True)
         try:
-            data = get_json("/report/5", params=params)
-        except requests.RequestException as error:
-            print(f"MLA report request failed for {params}: {error}")
-            continue
-        rows = [obj for obj in walk_objects(data) if is_goat_row(obj)]
-        if rows:
-            all_candidates.extend(rows)
+            page.goto(REPORT_URL, wait_until="networkidle", timeout=120000)
+            page.wait_for_timeout(3000)
 
-    target = [row for row in all_candidates if is_16_20_row(row)]
-    if not target:
-        raise RuntimeError("MLA Eastern States goat OTH 16–20kg cwt indicator not found")
+            button = page.get_by_role("button", name=re.compile(r"export data", re.I))
+            if button.count() == 0:
+                button = page.get_by_text(re.compile(r"export data", re.I))
+            if button.count() == 0:
+                raise RuntimeError("MLA Goat OTH Export Data button not found")
 
-    target.sort(key=date_key, reverse=True)
-    for row in target:
-        price = number_from_obj(row)
-        if price is not None and 0 < price < 2000:
-            print(f"MLA Eastern States goat OTH 16–20kg row: {row}")
-            return round(price, 1)
-    raise RuntimeError("MLA Eastern States goat OTH 16–20kg price not found")
+            with page.expect_download(timeout=60000) as download_info:
+                button.first.click()
+            download = download_info.value
+            content = Path(download.path()).read_bytes()
+            filename = download.suggested_filename or "goat_oth_export.csv"
+            print(f"Downloaded MLA Goat OTH export: {filename}")
+
+            if filename.lower().endswith((".csv", ".txt")) or b"," in content[:2000]:
+                return extract_csv_price(content)
+            raise RuntimeError(f"Unsupported MLA export format: {filename}")
+        finally:
+            browser.close()
 
 
 def update_xml(price):
@@ -102,19 +92,19 @@ def update_xml(price):
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Eastern States Goat OTH Price</title>
+    <title>NSW Goat OTH Price</title>
     <link>{MLA_STATISTICS_URL}</link>
-    <description>Latest MLA Eastern States goat Over-the-Hooks indicator</description>
+    <description>Latest MLA Eastern States goat Over-the-Hooks benchmark</description>
     <language>en-au</language>
     <item>
-      <title>Eastern States Goat OTH — 16–20kg cwt</title>
+      <title>NSW Goat OTH — 16–20kg cwt</title>
       <link>{MLA_STATISTICS_URL}</link>
-      <guid>eastern-states-goat-oth-16-20kg</guid>
+      <guid>nsw-goat-oth-16-20kg</guid>
       <pubDate>{now}</pubDate>
       <description><![CDATA[
         <p><strong>Price:</strong> {display_price}</p>
-        <p><strong>Category:</strong> Eastern States 16–20kg cwt</p>
-        <p><strong>Source:</strong> MLA Statistics API</p>
+        <p><strong>Benchmark:</strong> Eastern States 16–20kg cwt</p>
+        <p><strong>Source:</strong> Meat &amp; Livestock Australia (MLA)</p>
       ]]></description>
     </item>
   </channel>
