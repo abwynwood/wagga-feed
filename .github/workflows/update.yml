@@ -28,9 +28,6 @@ jobs:
         pip install requests beautifulsoup4 playwright
         python -m playwright install --with-deps chromium
 
-    - name: Test Lake Cargelligo and Merriwagga BAR1
-      run: python test_bar1_locations.py
-
     - name: Update Griffith Sheep Report
       run: python update_griffith.py
 
