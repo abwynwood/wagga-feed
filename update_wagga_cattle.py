@@ -12,11 +12,7 @@ OUTPUT_FILE = Path(__file__).with_name("wagga_cattle.xml")
 
 
 def get_text():
-    response = requests.get(
-        SOURCE_URL,
-        timeout=30,
-        headers={"User-Agent": "wagga-feed/1.0"},
-    )
+    response = requests.get(SOURCE_URL, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     text = soup.get_text(" ", strip=True)
@@ -54,15 +50,18 @@ def main():
     try:
         text = get_text()
 
+        # Agora's current report uses wording such as:
+        # "Feeder steers 340-400kg ... 482 to 584c/kg".
         feeder = cents_range([
-            r"\b(?:Light|Heavy)\s+feeder steers\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
-            r"\bMedium[-\s]+weight feeder steers\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
-            r"\bFeeder steers\b[^.]{0,220}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\b(?:Light|Heavy)\s+feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bMedium[-\s]+weight feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bFeeder steers\b.{0,350}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bFeeder steers\b.{0,350}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
         ], text)
 
         cows = cents_range([
-            r"\bHeavy cows\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
-            r"\bLeaner(?: types)?\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bHeavy cows\b.{0,250}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bLeaner(?: types)?\b.{0,250}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
         ], text)
 
         yarding_match = re.search(r"Total Yarding\s*[:\-]?\s*([\d,]+)", text, re.I)
@@ -80,11 +79,8 @@ def main():
         )
 
         now = datetime.now(timezone.utc)
-        pub_date = formatdate(now.timestamp(), usegmt=True)
-        title_date = date_title(now)
-
         xml = f'''<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0"><channel><title>Wagga Cattle Sale</title><link>{SOURCE_URL}</link><item><title>Wagga Cattle Sale — {title_date}</title><description><![CDATA[{description}]]></description><pubDate>{pub_date}</pubDate><guid>{SOURCE_URL}</guid></item></channel></rss>'''
+<rss version="2.0"><channel><title>Wagga Cattle Sale</title><link>{SOURCE_URL}</link><item><title>Wagga Cattle Sale — {date_title(now)}</title><description><![CDATA[{description}]]></description><pubDate>{formatdate(now.timestamp(), usegmt=True)}</pubDate><guid>{SOURCE_URL}</guid></item></channel></rss>'''
         OUTPUT_FILE.write_text(xml, encoding="utf-8")
         print(description.replace("<br>", " | "))
 
