@@ -1,5 +1,7 @@
 import html
 import re
+from datetime import datetime, timezone
+from email.utils import formatdate
 from pathlib import Path
 
 import requests
@@ -42,22 +44,28 @@ def market_direction(text):
     return "STEADY"
 
 
+def date_title(now):
+    day = now.day
+    suffix = "th" if 10 < day % 100 < 14 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"{day}{suffix} {now.strftime('%B %Y')}"
+
+
 def main():
     try:
         text = get_text()
 
         feeder = cents_range([
-            r"\b(?:Light|Heavy)\s+feeder steers\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-|–)\s*([\d,]+)\s*c/kg",
-            r"\bMedium[-\s]+weight feeder steers\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-|–)\s*([\d,]+)\s*c/kg",
-            r"\bFeeder steers\b[^.]{0,220}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-|–)\s*([\d,]+)\s*c/kg",
+            r"\b(?:Light|Heavy)\s+feeder steers\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bMedium[-\s]+weight feeder steers\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bFeeder steers\b[^.]{0,220}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
         ], text)
 
         cows = cents_range([
-            r"\bHeavy cows\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-|–)\s*([\d,]+)\s*c/kg",
-            r"\bLeaner(?: types)?\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-|–)\s*([\d,]+)\s*c/kg",
+            r"\bHeavy cows\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bLeaner(?: types)?\b[^.]{0,180}?\bfrom\s+([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
         ], text)
 
-        yarding_match = re.search(r"Total Yarding\s*[:\-]?\s*([\d,]+)\s*head", text, re.I)
+        yarding_match = re.search(r"Total Yarding\s*[:\-]?\s*([\d,]+)", text, re.I)
         yarding = f"{yarding_match.group(1)} head" if yarding_match else "Not reported"
 
         direction = market_direction(text)
@@ -71,14 +79,12 @@ def main():
             f"Summary: {summary}"
         )
 
-        xml = f'''<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-  <channel>
-    <title>Wagga Cattle Market</title>
-    <description><![CDATA[{description}]]></description>
-  </channel>
-</rss>
-'''
+        now = datetime.now(timezone.utc)
+        pub_date = formatdate(now.timestamp(), usegmt=True)
+        title_date = date_title(now)
+
+        xml = f'''<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"><channel><title>Wagga Cattle Sale</title><link>{SOURCE_URL}</link><item><title>Wagga Cattle Sale — {title_date}</title><description><![CDATA[{description}]]></description><pubDate>{pub_date}</pubDate><guid>{SOURCE_URL}</guid></item></channel></rss>'''
         OUTPUT_FILE.write_text(xml, encoding="utf-8")
         print(description.replace("<br>", " | "))
 
