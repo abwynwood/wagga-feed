@@ -120,9 +120,9 @@ def main():
         "Trade Lambs Range: " + trade,
         "Heavy Lambs Range: " + heavy,
         "Mutton/Ewes Range: " + mutton,
-        "Yarding: " + yarding_match.group(1) + " head",
-        "Market: " + market,
-        "Summary: " + summary,
+        "<i>Yarding: " + yarding_match.group(1) + " head</i>",
+        "<i>Market: " + market + "</i>",
+        "<i>Summary: " + summary + "</i>",
     ])
     ET.SubElement(item, "description").text = description
     ET.SubElement(item, "pubDate").text = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
