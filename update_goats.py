@@ -162,7 +162,7 @@ def update_xml(price_cents, grid_number, date_text, trend):
       <pubDate>{now}</pubDate>
       <description><![CDATA[
         <p><strong>Price:</strong> {price_cents:g} c/kg cwt</p>
-        <p><strong>15kg carcass:</strong> ${carcass_value_15kg:.2f}</p>
+        <p>(15kg carcass: ${carcass_value_15kg:.2f})</p>
         <p><strong>Processor:</strong> Thomas Foods International, Bourke</p>
         {trend_line}
       ]]></description>
