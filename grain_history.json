@@ -1,0 +1,26 @@
+{
+  "Condobolin APW1": [
+    {
+      "price": 322.25,
+      "timestamp": "2026-09-17T01:43:01.408817+00:00"
+    }
+  ],
+  "Condobolin BAR1": [
+    {
+      "price": 265.0,
+      "timestamp": "2026-09-17T01:43:09.418080+00:00"
+    }
+  ],
+  "Hillston APW1": [
+    {
+      "price": 306.0,
+      "timestamp": "2026-09-17T01:42:44.740486+00:00"
+    }
+  ],
+  "Lake Cargelligo BAR1": [
+    {
+      "price": 258.0,
+      "timestamp": "2026-09-17T01:42:53.491361+00:00"
+    }
+  ]
+}
