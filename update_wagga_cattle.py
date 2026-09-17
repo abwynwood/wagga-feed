@@ -87,10 +87,10 @@ def main():
         summary = "Market firm to stronger." if direction == "FIRM" else "Market steady." if direction == "STEADY" else "Market softer."
 
         description = (
-            f"<b>Feeder Steers:</b> {feeder}<br>"
-            f"<b>300kg steer:</b> {feeder_value}<br>"
-            f"<b>Cows:</b> {cows}<br>"
-            f"<b>500kg cow:</b> {cow_value}<br>"
+            f"<strong>Feeder Steers:</strong> {feeder}<br>"
+            f"<strong>300kg steer:</strong> {feeder_value}<br>"
+            f"<strong>Cows:</strong> {cows}<br>"
+            f"<strong>500kg cow:</strong> {cow_value}<br>"
             f"<i>Yarding: {yarding}</i><br>"
             f"<i>Market: {direction}</i><br>"
             f"<i>Summary: {summary}</i>"
