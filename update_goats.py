@@ -22,37 +22,32 @@ def fetch_bourke_grid():
         finally:
             browser.close()
 
-    # On Agora's rendered marketplace card the price appears BEFORE the
-    # visible listing title, so search from the price forward to the title.
-    pattern = re.compile(
-        r"\$(\d+(?:\.\d+)?)\s*/kg\s*HSCW.{0,350}?"
-        r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)",
-        re.I,
+    # Find the latest Bourke Goat Grid first, then look around that listing for
+    # its HSCW price. This is more tolerant of Agora changing the order or
+    # spacing of the price and title on the rendered page.
+    title_pattern = re.compile(
+        r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)", re.I
     )
-    matches = []
-    for match in pattern.finditer(text):
-        price_dollars = float(match.group(1))
-        grid_number = int(match.group(2))
-        date_text = match.group(3).strip()
-        matches.append((grid_number, date_text, price_dollars))
+    title_matches = list(title_pattern.finditer(text))
 
-    if not matches:
-        # Fallback: inspect text immediately before each Bourke Goat Grid
-        # title. This is tolerant of small layout changes on Agora.
-        title_pattern = re.compile(
-            r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)", re.I
+    matches = []
+    for title_match in title_matches:
+        grid_number = int(title_match.group(1))
+        date_text = title_match.group(2).strip()
+        start = max(0, title_match.start() - 2500)
+        end = min(len(text), title_match.end() + 2500)
+        window = text[start:end]
+
+        # Accept minor formatting changes such as "$7.20 / kg HSCW", "$7.20/kg
+        # HSCW", or a missing dollar sign while retaining the HSCW requirement.
+        price_pattern = re.compile(
+            r"\$?\s*(\d+(?:\.\d+)?)\s*/?\s*kg\s*HSCW", re.I
         )
-        for title_match in title_pattern.finditer(text):
-            window = text[max(0, title_match.start() - 500):title_match.start()]
-            price_match = re.search(r"\$(\d+(?:\.\d+)?)\s*/kg\s*HSCW", window, re.I)
-            if price_match:
-                matches.append(
-                    (
-                        int(title_match.group(1)),
-                        title_match.group(2).strip(),
-                        float(price_match.group(1)),
-                    )
-                )
+        price_match = price_pattern.search(window)
+        if price_match:
+            matches.append(
+                (grid_number, date_text, float(price_match.group(1)))
+            )
 
     if not matches:
         raise RuntimeError("Current Bourke goat processor grid not found on Agora portal")
