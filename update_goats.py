@@ -11,36 +11,21 @@ OUTPUT_FILE = Path(__file__).with_name("goats.xml")
 
 
 def fetch_bourke_grid():
-    response = requests.get(
-        AGORA_URL,
-        timeout=30,
-        headers={"User-Agent": "wagga-feed/1.0"},
-    )
+    response = requests.get(AGORA_URL, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
-    text = soup.get_text(" ", strip=True)
-    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
 
-    # Agora currently publishes the Thomas Foods International Bourke goat
-    # processor grid on its public marketplace. We deliberately target the
-    # Bourke grid rather than the generic MLA OTH benchmark, because the
-    # Dakboard block is intended to show the price relevant to the Broken Hill
-    # depot / Bourke processor pathway.
     matches = []
     pattern = re.compile(
         r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\).*?\$(\d+(?:\.\d+)?)\s*/kg\s*HSCW",
         re.I,
     )
     for match in pattern.finditer(text):
-        grid_number = int(match.group(1))
-        date_text = match.group(2).strip()
-        price = float(match.group(3))
-        matches.append((grid_number, date_text, price))
+        matches.append((int(match.group(1)), match.group(2).strip(), float(match.group(3))))
 
     if not matches:
-        # The rendered page can place the price before the listing title.
-        # Look for each Bourke Goat Grid mention and inspect a nearby window.
         fallback = re.compile(r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)", re.I)
         for match in fallback.finditer(text):
             window = text[max(0, match.start() - 700): min(len(text), match.end() + 700)]
@@ -51,16 +36,15 @@ def fetch_bourke_grid():
     if not matches:
         raise RuntimeError("Current Bourke goat processor grid not found on Agora marketplace")
 
-    # Prefer the highest/current grid number. This avoids accidentally using
-    # an older Bourke grid if Agora leaves historical listings in the page.
-    grid_number, date_text, price = max(matches, key=lambda item: item[0])
-    print(f"Agora Bourke goat grid {grid_number} ({date_text}): ${price:g}/kg HSCW")
-    return price, grid_number, date_text
+    grid_number, date_text, price_dollars = max(matches, key=lambda item: item[0])
+    price_cents = round(price_dollars * 100, 1)
+    print(f"Agora Bourke goat grid {grid_number} ({date_text}): ${price_dollars:g}/kg HSCW = {price_cents:g} c/kg cwt")
+    return price_cents, grid_number, date_text
 
 
-def update_xml(price, grid_number, date_text):
+def update_xml(price_cents, grid_number, date_text):
     now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
-    display_price = f"{price:g} c/kg cwt"
+    display_price = f"{price_cents:g} c/kg cwt"
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -87,8 +71,8 @@ def update_xml(price, grid_number, date_text):
 
 if __name__ == "__main__":
     try:
-        price, grid_number, date_text = fetch_bourke_grid()
-        update_xml(price, grid_number, date_text)
+        price_cents, grid_number, date_text = fetch_bourke_grid()
+        update_xml(price_cents, grid_number, date_text)
     except Exception as error:
         print("Goat update failed:", error)
         raise
