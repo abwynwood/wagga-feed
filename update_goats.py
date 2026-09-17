@@ -12,8 +12,6 @@ HISTORY_FILE = Path(__file__).with_name("goat_history.json")
 
 
 def fetch_bourke_grid():
-    # Agora is a JavaScript marketplace. GitHub's browser needs to inspect the
-    # rendered DOM/frames rather than relying only on body.inner_text().
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
@@ -26,29 +24,25 @@ def fetch_bourke_grid():
             )
             page.goto(AGORA_URL, wait_until="domcontentloaded", timeout=60_000)
             page.wait_for_timeout(15_000)
-
             for _ in range(3):
                 page.mouse.wheel(0, 1800)
                 page.wait_for_timeout(2_000)
 
-            texts = []
+            blocks = []
             for frame in page.frames:
                 try:
-                    html = frame.content()
-                    soup = BeautifulSoup(html, "html.parser")
-                    texts.append(soup.get_text(" ", strip=True))
-                    texts.extend(
-                        script.get_text(" ", strip=True)
-                        for script in soup.find_all("script")
-                    )
+                    soup = BeautifulSoup(frame.content(), "html.parser")
+                    # Preserve DOM blocks so a price can only be paired with
+                    # the Bourke Goat Grid listing it belongs to.
+                    for node in soup.find_all(["article", "li", "tr", "div"]):
+                        text = re.sub(r"\s+", " ", node.get_text(" ", strip=True))
+                        if re.search(r"Bourke\s+Goat\s+Grid", text, re.I):
+                            blocks.append(text)
                 except Exception:
                     continue
         finally:
             browser.close()
 
-    combined = re.sub(r"\s+", " ", " ".join(texts))
-
-    # Agora uses alphanumeric grid numbers such as 38A.
     title_pattern = re.compile(
         r"Bourke\s+Goat\s+Grid\s+(\d+[A-Za-z]?)\s*\(([^)]*)\)", re.I
     )
@@ -57,42 +51,33 @@ def fetch_bourke_grid():
     )
 
     matches = []
-    for title_match in title_pattern.finditer(combined):
+    seen = set()
+    for block in blocks:
+        title_match = title_pattern.search(block)
+        price_match = price_pattern.search(block)
+        if not title_match or not price_match:
+            continue
         grid_text = title_match.group(1).strip()
         date_text = title_match.group(2).strip()
-
-        # Current Agora layout puts the price immediately before the title.
-        windows = [
-            combined[title_match.end():title_match.end() + 2500],
-            combined[max(0, title_match.start() - 2500):title_match.start()],
-        ]
-        price_match = next(
-            (m for window in windows if (m := price_pattern.search(window))),
-            None,
-        )
-
-        if price_match:
-            matches.append((grid_text, date_text, float(price_match.group(1))))
+        price_dollars = float(price_match.group(1))
+        key = (grid_text, date_text, price_dollars)
+        if key not in seen:
+            seen.add(key)
+            matches.append(key)
 
     if not matches:
-        bourke_positions = [m.start() for m in re.finditer("Bourke", combined, re.I)]
-        print(f"Agora diagnostic: found {len(bourke_positions)} occurrences of 'Bourke' in rendered content")
-        for position in bourke_positions[:5]:
-            print(combined[max(0, position - 250):position + 700])
         raise RuntimeError("Current Bourke goat processor grid not found on Agora portal")
 
-    def grid_sort_key(item):
-        match = re.match(r"(\d+)([A-Za-z]?)$", item[0])
-        if not match:
-            return (0, "")
-        return (int(match.group(1)), match.group(2).upper())
+    def date_sort_key(item):
+        try:
+            return datetime.strptime(item[1], "%d %b %y")
+        except ValueError:
+            return datetime.min
 
-    grid_text, date_text, price_dollars = max(matches, key=grid_sort_key)
+    # Select the newest Bourke Goat Grid listing, regardless of its grid number.
+    grid_text, date_text, price_dollars = max(matches, key=date_sort_key)
     price_cents = round(price_dollars * 100, 1)
-    print(
-        f"Agora Bourke goat grid {grid_text} ({date_text}): "
-        f"${price_dollars:g}/kg HSCW = {price_cents:g} c/kg cwt"
-    )
+    print(f"Agora Bourke goat grid {grid_text} ({date_text}): ${price_dollars:g}/kg HSCW = {price_cents:g} c/kg cwt")
     return price_cents, grid_text, date_text
 
 
@@ -107,9 +92,7 @@ def load_history():
 
 
 def save_history(history):
-    HISTORY_FILE.write_text(
-        json.dumps(history, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    HISTORY_FILE.write_text(json.dumps(history, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def trend_for(value, history):
@@ -127,10 +110,7 @@ def trend_for(value, history):
             break
 
     history.append({"timestamp": now.isoformat(), "price": value})
-    history[:] = [
-        entry for entry in history
-        if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()
-    ]
+    history[:] = [entry for entry in history if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()]
 
     if previous is None:
         return ""
@@ -147,7 +127,6 @@ def update_xml(price_cents, grid_number, date_text, trend):
     price_dollars = price_cents / 100
     carcass_value_15kg = price_dollars * 15
     trend_line = f"<p>{trend}</p>" if trend else ""
-
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
