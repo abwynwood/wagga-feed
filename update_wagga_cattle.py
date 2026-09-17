@@ -88,9 +88,9 @@ def main():
 
         description = (
             f"<strong>Feeder Steers:</strong> {feeder}<br>"
-            f"<strong>300kg steer:</strong> {feeder_value}<br>"
+            f"<span> (300kg steer: {feeder_value})</span><br>"
             f"<strong>Cows:</strong> {cows}<br>"
-            f"<strong>500kg cow:</strong> {cow_value}<br>"
+            f"<span>(500kg cow: {cow_value})</span><br>"
             f"<i>Yarding: {yarding}</i><br>"
             f"<i>Market: {direction}</i><br>"
             f"<i>Summary: {summary}</i>"
