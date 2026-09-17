@@ -85,7 +85,6 @@ def update_xml(price_cents, grid_number, date_text):
         <p><strong>Price:</strong> {price_cents:g} c/kg cwt</p>
         <p><strong>15kg carcass:</strong> ${carcass_value_15kg:.2f}</p>
         <p><strong>Processor:</strong> Thomas Foods International, Bourke</p>
-        <p><strong>Source:</strong> Agora Livestock</p>
       ]]></description>
     </item>
   </channel>
