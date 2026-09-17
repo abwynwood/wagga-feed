@@ -3,67 +3,71 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+import requests
+from bs4 import BeautifulSoup
+from pypdf import PdfReader
 
-AGORA_URL = "https://portal.condabribeef.agoralivestock.com.au/"
+TFI_SUPPLIERS_URL = "https://thomasfoods.com/livestock-suppliers/"
 OUTPUT_FILE = Path(__file__).with_name("goats.xml")
 HISTORY_FILE = Path(__file__).with_name("goat_history.json")
 
 
 def fetch_bourke_grid():
-    # Agora is JavaScript-rendered. Read the rendered page text, then locate
-    # the Bourke listing by its title and extract the price from that card.
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        try:
-            page = browser.new_page()
-            page.goto(AGORA_URL, wait_until="domcontentloaded", timeout=60_000)
-            page.wait_for_timeout(10_000)
-            text = re.sub(r"\s+", " ", page.locator("body").inner_text())
-        finally:
-            browser.close()
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)"}
+    response = requests.get(TFI_SUPPLIERS_URL, headers=headers, timeout=60)
+    response.raise_for_status()
 
-    # Current Agora card text is:
-    #   Bourke Goat Grid 38 (16 Sep 26) ... $7.30 /kg HSCW
-    # Allow optional spaces around the slash and tolerate intervening card
-    # text, while requiring the price to belong to a Bourke Goat Grid card.
-    title_pattern = re.compile(
-        r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)", re.I
-    )
-    price_pattern = re.compile(
-        r"\$\s*(\d+(?:\.\d+)?)\s*/?\s*kg\s*HSCW", re.I
-    )
+    soup = BeautifulSoup(response.text, "html.parser")
+    goat_pdf_url = None
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        label = link.get_text(" ", strip=True).lower()
+        if "goat-grid" in href.lower() or ("pricing grid" in label and "goat" in label):
+            goat_pdf_url = href
+            break
 
-    matches = []
-    for title_match in title_pattern.finditer(text):
-        grid_number = int(title_match.group(1))
-        date_text = title_match.group(2).strip()
+    if not goat_pdf_url:
+        # Fall back to any PDF link whose URL identifies it as a goat grid.
+        for link in soup.find_all("a", href=True):
+            href = link["href"]
+            if ".pdf" in href.lower() and "goat" in href.lower():
+                goat_pdf_url = href
+                break
 
-        # First try the text immediately following the title. The listing
-        # price is normally within the same card and appears shortly after it.
-        window = text[title_match.end():title_match.end() + 1200]
-        price_match = price_pattern.search(window)
+    if not goat_pdf_url:
+        raise RuntimeError("Current Thomas Foods goat grid PDF link not found")
 
-        # Also try a window immediately before the title for older/card-layout
-        # variants where the price precedes the title.
-        if not price_match:
-            window = text[max(0, title_match.start() - 1200):title_match.start()]
-            price_match = price_pattern.search(window)
+    if goat_pdf_url.startswith("/"):
+        goat_pdf_url = "https://thomasfoods.com" + goat_pdf_url
+    elif goat_pdf_url.startswith("//"):
+        goat_pdf_url = "https:" + goat_pdf_url
 
-        if price_match:
-            matches.append(
-                (grid_number, date_text, float(price_match.group(1)))
-            )
+    pdf_response = requests.get(goat_pdf_url, headers=headers, timeout=60)
+    pdf_response.raise_for_status()
 
-    if not matches:
-        raise RuntimeError("Current Bourke goat processor grid not found on Agora portal")
+    import io
+    reader = PdfReader(io.BytesIO(pdf_response.content))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    text = re.sub(r"[ \t]+", " ", text)
 
-    grid_number, date_text, price_dollars = max(matches, key=lambda item: item[0])
+    # Locate the Bourke HSCW goat section and take the first dollar figure
+    # belonging to that section.
+    bourke = re.search(r"BOURKE\b(.*?)(?=\n[A-Z][A-Z &-]{3,}\b|$)", text, re.I | re.S)
+    section = bourke.group(1) if bourke else text
+    match = re.search(r"HSCW\s+GOATS.*?\$\s*(\d+(?:\.\d+)?)", section, re.I | re.S)
+    if not match:
+        match = re.search(r"BOURKE.*?HSCW\s+GOATS.*?\$\s*(\d+(?:\.\d+)?)", text, re.I | re.S)
+    if not match:
+        raise RuntimeError("Current Bourke goat price not found in Thomas Foods goat grid PDF")
+
+    price_dollars = float(match.group(1))
+    grid_match = re.search(r"Goat\s+Grid\s+([0-9]+)", text, re.I)
+    date_match = re.search(r"\b(\d{2}[./]\d{2}[./]\d{4})\b", text)
+    grid_number = grid_match.group(1) if grid_match else "current"
+    date_text = date_match.group(1) if date_match else ""
+
     price_cents = round(price_dollars * 100, 1)
-    print(
-        f"Agora Bourke goat grid {grid_number} ({date_text}): "
-        f"${price_dollars:g}/kg HSCW = {price_cents:g} c/kg cwt"
-    )
+    print(f"Thomas Foods Bourke goat grid {grid_number} ({date_text}): ${price_dollars:g}/kg HSCW = {price_cents:g} c/kg cwt")
     return price_cents, grid_number, date_text
 
 
@@ -78,16 +82,12 @@ def load_history():
 
 
 def save_history(history):
-    HISTORY_FILE.write_text(
-        json.dumps(history, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    HISTORY_FILE.write_text(json.dumps(history, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def trend_for(value, history):
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=7)
-
     previous = None
     for entry in reversed(history):
         try:
@@ -98,16 +98,10 @@ def trend_for(value, history):
         if timestamp <= cutoff:
             previous = price
             break
-
     history.append({"timestamp": now.isoformat(), "price": value})
-    history[:] = [
-        entry for entry in history
-        if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()
-    ]
-
+    history[:] = [entry for entry in history if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()]
     if previous is None:
         return ""
-
     change = round(value - previous, 1)
     if abs(change) < 0.5:
         return "→ Steady from 7 days ago"
@@ -121,17 +115,17 @@ def update_xml(price_cents, grid_number, date_text, trend):
     price_dollars = price_cents / 100
     carcass_value_15kg = price_dollars * 15
     trend_line = f"<p>{trend}</p>" if trend else ""
-
+    date_suffix = f" ({date_text})" if date_text else ""
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
     <title>Bourke Goat Processor Grid</title>
-    <link>{AGORA_URL}</link>
-    <description>Current Thomas Foods International Bourke goat processor grid published by Agora Livestock</description>
+    <link>{TFI_SUPPLIERS_URL}</link>
+    <description>Current Thomas Foods International Bourke goat processor grid</description>
     <language>en-au</language>
     <item>
-      <title>Bourke Goat Grid {grid_number} ({date_text})</title>
-      <link>{AGORA_URL}</link>
+      <title>Bourke Goat Grid {grid_number}{date_suffix}</title>
+      <link>{TFI_SUPPLIERS_URL}</link>
       <guid>bourke-goat-grid</guid>
       <pubDate>{now}</pubDate>
       <description><![CDATA[
