@@ -93,7 +93,7 @@ def main():
             f"Feeder Steers: {feeder}<br>"
             f"300kg steer: {feeder_value}<br>"
             f"Cows: {cows}<br>"
-            f"500kg cow: {cow_value}<br><br>"
+            f"500kg cow: {cow_value}<br>"
             f"Yarding: {yarding}<br>"
             f"Market: {direction}<br>"
             f"Summary: {summary}"
