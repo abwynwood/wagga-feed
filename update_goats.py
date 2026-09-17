@@ -66,6 +66,9 @@ def fetch_bourke_grid():
 
 def update_xml(price_cents, grid_number, date_text):
     now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
+    price_dollars = price_cents / 100
+    carcass_value_15kg = price_dollars * 15
+
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -80,7 +83,7 @@ def update_xml(price_cents, grid_number, date_text):
       <pubDate>{now}</pubDate>
       <description><![CDATA[
         <p><strong>Price:</strong> {price_cents:g} c/kg cwt</p>
-        <p><strong>Grid:</strong> Bourke Goat Grid {grid_number} ({date_text})</p>
+        <p><strong>15kg carcass:</strong> ${carcass_value_15kg:.2f}</p>
         <p><strong>Processor:</strong> Thomas Foods International, Bourke</p>
         <p><strong>Source:</strong> Agora Livestock</p>
       ]]></description>
