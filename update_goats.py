@@ -5,7 +5,7 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
-AGORA_URL = "https://buyer.condabribeef.agoralivestock.com.au/"
+AGORA_URL = "https://buyer.agoralivestock.com.au/marketplace"
 OUTPUT_FILE = Path(__file__).with_name("goats.xml")
 
 
@@ -19,9 +19,6 @@ def fetch_bourke_grid():
     soup = BeautifulSoup(response.text, "html.parser")
     text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
 
-    # Match the price immediately associated with the Bourke Goat Grid listing.
-    # The previous scraper used a greedy expression that could run past the
-    # Bourke listing and capture a later $10.60 lamb price instead.
     pattern = re.compile(
         r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)(.{0,220}?)\$(\d+(?:\.\d+)?)\s*/kg\s*HSCW",
         re.I,
