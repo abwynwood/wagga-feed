@@ -3,7 +3,6 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 AGORA_URL = "https://portal.condabribeef.agoralivestock.com.au/"
@@ -28,47 +27,53 @@ def fetch_bourke_grid():
                 page.mouse.wheel(0, 1800)
                 page.wait_for_timeout(2_000)
 
-            blocks = []
+            # Agora embeds the listing data in the page as JSON. Read the
+            # listing's own title and HSCW price from that JSON so a price
+            # from another listing can never be accidentally paired with it.
+            documents = []
             for frame in page.frames:
                 try:
-                    soup = BeautifulSoup(frame.content(), "html.parser")
-                    for node in soup.find_all(["article", "li", "tr"]):
-                        text = re.sub(r"\s+", " ", node.get_text(" ", strip=True))
-                        if re.search(r"Bourke\s+Goat\s+Grid", text, re.I):
-                            blocks.append(text)
+                    documents.append(frame.content())
                 except Exception:
                     continue
         finally:
             browser.close()
 
     title_pattern = re.compile(
-        r"Bourke\s+Goat\s+Grid\s+(\d+[A-Za-z]?)\s*\(([^)]*)\)", re.I
+        r'"title"\s*:\s*"Bourke\s+Goat\s+Grid\s+(\d+[A-Za-z]?)\s*\(([^)]*)\)"',
+        re.I,
     )
-    price_pattern = re.compile(
-        r"\$\s*(\d+(?:\.\d+)?)\s*/?\s*kg\s*HSCW", re.I
+    prices_pattern = re.compile(
+        r'"prices"\s*:\s*\{\s*"HSCW"\s*:\s*\{\s*"min"\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*,\s*"max"\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*\}',
+        re.I,
     )
 
     matches = []
     seen = set()
-    for block in blocks:
-        title_match = title_pattern.search(block)
-        if not title_match:
-            continue
-        # The price must occur in the same listing/card as the grid title.
-        price_matches = list(price_pattern.finditer(block))
-        if len(price_matches) != 1:
-            continue
-        price_match = price_matches[0]
-        grid_text = title_match.group(1).strip()
-        date_text = title_match.group(2).strip()
-        price_dollars = float(price_match.group(1))
-        key = (grid_text, date_text, price_dollars)
-        if key not in seen:
-            seen.add(key)
-            matches.append(key)
+    for document in documents:
+        for title_match in title_pattern.finditer(document):
+            # The listing JSON has its prices later in the same object. Stop
+            # at the next listing title so we cannot cross into another card.
+            next_title = title_pattern.search(document, title_match.end())
+            section = document[title_match.end(): next_title.start() if next_title else title_match.end() + 15000]
+            price_match = prices_pattern.search(section)
+            if not price_match:
+                continue
+            min_price = float(price_match.group(1))
+            max_price = float(price_match.group(2))
+            if min_price != max_price:
+                raise RuntimeError(
+                    f"Bourke goat grid has an unexpected HSCW price range: {min_price}-{max_price}"
+                )
+            grid_text = title_match.group(1).strip()
+            date_text = title_match.group(2).strip()
+            key = (grid_text, date_text, min_price)
+            if key not in seen:
+                seen.add(key)
+                matches.append(key)
 
     if not matches:
-        raise RuntimeError("Current Bourke goat processor grid not found on Agora portal")
+        raise RuntimeError("Current Bourke goat processor grid not found in Agora listing data")
 
     def date_sort_key(item):
         try:
