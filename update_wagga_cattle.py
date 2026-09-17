@@ -63,9 +63,6 @@ def date_title(now):
 def main():
     try:
         text = get_text()
-
-        # Agora's current report uses wording such as:
-        # "Feeder steers 340-400kg ... 482 to 584c/kg".
         feeder_range = cents_range([
             r"\b(?:Light|Heavy)\s+feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bMedium[-\s]+weight feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
@@ -94,9 +91,9 @@ def main():
             f"300kg steer: {feeder_value}<br>"
             f"Cows: {cows}<br>"
             f"500kg cow: {cow_value}<br>"
-            f"Yarding: {yarding}<br>"
-            f"Market: {direction}<br>"
-            f"Summary: {summary}"
+            f"<i>Yarding: {yarding}</i><br>"
+            f"<i>Market: {direction}</i><br>"
+            f"<i>Summary: {summary}</i>"
         )
 
         now = datetime.now(timezone.utc)
