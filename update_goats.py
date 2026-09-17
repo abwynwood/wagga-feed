@@ -4,14 +4,12 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-AGORA_URL = "https://buyer.agoralivestock.com.au/marketplace"
+AGORA_URL = "https://portal.condabribeef.agoralivestock.com.au/"
 OUTPUT_FILE = Path(__file__).with_name("goats.xml")
 
 
 def fetch_bourke_grid():
-    # Agora's marketplace is rendered by JavaScript, so a normal requests
-    # download does not contain the listings. Use the same Chromium that the
-    # workflow already installs for the other scrapers.
+    # The portal is JavaScript-rendered, so load it in Chromium.
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
@@ -22,9 +20,10 @@ def fetch_bourke_grid():
         finally:
             browser.close()
 
-    # Match the price immediately associated with the Bourke Goat Grid listing.
+    # Match the current Bourke goat grid and its price. Keep the match tied
+    # to the grid title so another Thomas Foods listing cannot be selected.
     pattern = re.compile(
-        r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)(.{0,220}?)\$(\d+(?:\.\d+)?)\s*/kg\s*HSCW",
+        r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)(.{0,500}?)\$(\d+(?:\.\d+)?)\s*/kg\s*HSCW",
         re.I,
     )
     matches = []
@@ -35,7 +34,7 @@ def fetch_bourke_grid():
         matches.append((grid_number, date_text, price_dollars))
 
     if not matches:
-        raise RuntimeError("Current Bourke goat processor grid not found on Agora marketplace")
+        raise RuntimeError("Current Bourke goat processor grid not found on Agora portal")
 
     grid_number, date_text, price_dollars = max(matches, key=lambda item: item[0])
     price_cents = round(price_dollars * 100, 1)
