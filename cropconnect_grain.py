@@ -309,30 +309,22 @@ def trend_for(target, value, history):
             break
 
     entries.append({"timestamp": now.isoformat(), "price": value})
-    # Keep roughly 30 days of hourly observations so the file stays small.
     history[target] = [
         entry for entry in entries
         if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()
     ]
 
     if previous is None:
-        return "Trend: building 7-day history"
+        return ""
 
     change = value - previous
     if abs(change) < 3:
-        direction = "Steady"
-        amount = 0
-    elif change > 0:
-        direction = "Firming"
-        amount = round(change, 2)
-    else:
-        direction = "Softer"
-        amount = round(change, 2)
+        return "→ Steady from 7 days ago"
 
-    if amount == 0:
-        return f"→ {direction} from 7 days ago"
-    sign = "+" if amount > 0 else ""
-    return f"{'↑' if amount > 0 else '↓'} {direction} {sign}${amount:.2f}/t from 7 days ago"
+    direction = "Firming" if change > 0 else "Softer"
+    arrow = "↑" if change > 0 else "↓"
+    sign = "+" if change > 0 else ""
+    return f"{arrow} {direction} {sign}${change:.2f}/t from 7 days ago"
 
 
 def write_xml(target, output, trend, filename):
@@ -377,7 +369,7 @@ def update(location, grade, filename):
     value = matched.get(target)
     output = f"${value:.2f}/t" if value is not None else "Unavailable"
     history = load_history()
-    trend = trend_for(target, value, history) if value is not None else "Trend unavailable"
+    trend = trend_for(target, value, history) if value is not None else ""
     save_history(history)
     print(f"CropConnect snapshot: season={season}, target={target}, output={output}, trend={trend}")
     write_xml(target, output, trend, filename)
