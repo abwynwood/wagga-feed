@@ -32,9 +32,7 @@ def fetch_bourke_grid():
             for frame in page.frames:
                 try:
                     soup = BeautifulSoup(frame.content(), "html.parser")
-                    # Preserve DOM blocks so a price can only be paired with
-                    # the Bourke Goat Grid listing it belongs to.
-                    for node in soup.find_all(["article", "li", "tr", "div"]):
+                    for node in soup.find_all(["article", "li", "tr"]):
                         text = re.sub(r"\s+", " ", node.get_text(" ", strip=True))
                         if re.search(r"Bourke\s+Goat\s+Grid", text, re.I):
                             blocks.append(text)
@@ -54,9 +52,13 @@ def fetch_bourke_grid():
     seen = set()
     for block in blocks:
         title_match = title_pattern.search(block)
-        price_match = price_pattern.search(block)
-        if not title_match or not price_match:
+        if not title_match:
             continue
+        # The price must occur in the same listing/card as the grid title.
+        price_matches = list(price_pattern.finditer(block))
+        if len(price_matches) != 1:
+            continue
+        price_match = price_matches[0]
         grid_text = title_match.group(1).strip()
         date_text = title_match.group(2).strip()
         price_dollars = float(price_match.group(1))
@@ -74,7 +76,6 @@ def fetch_bourke_grid():
         except ValueError:
             return datetime.min
 
-    # Select the newest Bourke Goat Grid listing, regardless of its grid number.
     grid_text, date_text, price_dollars = max(matches, key=date_sort_key)
     price_cents = round(price_dollars * 100, 1)
     print(f"Agora Bourke goat grid {grid_text} ({date_text}): ${price_dollars:g}/kg HSCW = {price_cents:g} c/kg cwt")
