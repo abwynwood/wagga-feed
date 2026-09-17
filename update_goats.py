@@ -27,8 +27,6 @@ def fetch_bourke_grid():
             page.goto(AGORA_URL, wait_until="domcontentloaded", timeout=60_000)
             page.wait_for_timeout(15_000)
 
-            # Give the marketplace a chance to load listings which are fetched
-            # after the initial page render.
             for _ in range(3):
                 page.mouse.wheel(0, 1800)
                 page.wait_for_timeout(2_000)
@@ -39,8 +37,6 @@ def fetch_bourke_grid():
                     html = frame.content()
                     soup = BeautifulSoup(html, "html.parser")
                     texts.append(soup.get_text(" ", strip=True))
-                    # Also inspect script text because some React/Next-style
-                    # apps retain listing data in embedded JSON.
                     texts.extend(
                         script.get_text(" ", strip=True)
                         for script in soup.find_all("script")
@@ -52,8 +48,9 @@ def fetch_bourke_grid():
 
     combined = re.sub(r"\s+", " ", " ".join(texts))
 
+    # Agora uses alphanumeric grid numbers such as 38A.
     title_pattern = re.compile(
-        r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)", re.I
+        r"Bourke\s+Goat\s+Grid\s+(\d+[A-Za-z]?)\s*\(([^)]*)\)", re.I
     )
     price_pattern = re.compile(
         r"\$\s*(\d+(?:\.\d+)?)\s*/?\s*kg\s*HSCW", re.I
@@ -61,39 +58,42 @@ def fetch_bourke_grid():
 
     matches = []
     for title_match in title_pattern.finditer(combined):
-        grid_number = int(title_match.group(1))
+        grid_text = title_match.group(1).strip()
         date_text = title_match.group(2).strip()
 
-        # The title and price are in the same listing card, but HTML structure
-        # can vary. Search a generous local window in both directions.
+        # Current Agora layout puts the price immediately before the title.
         windows = [
             combined[title_match.end():title_match.end() + 2500],
             combined[max(0, title_match.start() - 2500):title_match.start()],
         ]
         price_match = next(
-            (price_pattern.search(window) for window in windows if price_pattern.search(window)),
+            (m for window in windows if (m := price_pattern.search(window))),
             None,
         )
 
         if price_match:
-            matches.append((grid_number, date_text, float(price_match.group(1))))
+            matches.append((grid_text, date_text, float(price_match.group(1))))
 
     if not matches:
-        # Leave a useful diagnostic in the Actions log without dumping the
-        # whole page. This makes future Agora layout changes much easier to fix.
         bourke_positions = [m.start() for m in re.finditer("Bourke", combined, re.I)]
         print(f"Agora diagnostic: found {len(bourke_positions)} occurrences of 'Bourke' in rendered content")
         for position in bourke_positions[:5]:
             print(combined[max(0, position - 250):position + 700])
         raise RuntimeError("Current Bourke goat processor grid not found on Agora portal")
 
-    grid_number, date_text, price_dollars = max(matches, key=lambda item: item[0])
+    def grid_sort_key(item):
+        match = re.match(r"(\d+)([A-Za-z]?)$", item[0])
+        if not match:
+            return (0, "")
+        return (int(match.group(1)), match.group(2).upper())
+
+    grid_text, date_text, price_dollars = max(matches, key=grid_sort_key)
     price_cents = round(price_dollars * 100, 1)
     print(
-        f"Agora Bourke goat grid {grid_number} ({date_text}): "
+        f"Agora Bourke goat grid {grid_text} ({date_text}): "
         f"${price_dollars:g}/kg HSCW = {price_cents:g} c/kg cwt"
     )
-    return price_cents, grid_number, date_text
+    return price_cents, grid_text, date_text
 
 
 def load_history():
