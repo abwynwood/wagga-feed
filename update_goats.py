@@ -2,23 +2,27 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 AGORA_URL = "https://buyer.agoralivestock.com.au/marketplace"
 OUTPUT_FILE = Path(__file__).with_name("goats.xml")
 
 
 def fetch_bourke_grid():
-    response = requests.get(
-        AGORA_URL,
-        timeout=30,
-        headers={"User-Agent": "wagga-feed/1.0"},
-    )
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
+    # Agora's marketplace is rendered by JavaScript, so a normal requests
+    # download does not contain the listings. Use the same Chromium that the
+    # workflow already installs for the other scrapers.
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(AGORA_URL, wait_until="domcontentloaded", timeout=60_000)
+            page.wait_for_timeout(5_000)
+            text = re.sub(r"\s+", " ", page.locator("body").inner_text())
+        finally:
+            browser.close()
 
+    # Match the price immediately associated with the Bourke Goat Grid listing.
     pattern = re.compile(
         r"Bourke\s+Goat\s+Grid\s+(\d+)\s*\(([^)]*)\)(.{0,220}?)\$(\d+(?:\.\d+)?)\s*/kg\s*HSCW",
         re.I,
