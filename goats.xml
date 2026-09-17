@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>NSW Goat OTH Price</title>
-    <link>https://www.mla.com.au/prices-markets/statistics/australian-goat-oth/</link>
-    <description>Latest MLA Eastern States goat Over-the-Hooks benchmark</description>
+    <title>Bourke Goat Processor Grid</title>
+    <link>https://buyer.agoralivestock.com.au/marketplace</link>
+    <description>Current Thomas Foods International Bourke goat processor grid published by Agora Livestock</description>
     <language>en-au</language>
     <item>
-      <title>NSW Goat OTH — 16–20kg cwt</title>
-      <link>https://www.mla.com.au/prices-markets/statistics/australian-goat-oth/</link>
-      <guid>nsw-goat-oth-16-20kg</guid>
-      <pubDate>Wed, 16 Sep 2026 23:08:53 +0000</pubDate>
+      <title>Bourke Goat Grid 38 (16 Sep 26)</title>
+      <link>https://buyer.agoralivestock.com.au/marketplace</link>
+      <guid>bourke-goat-grid</guid>
+      <pubDate>Thu, 17 Sep 2026 00:06:41 +0000</pubDate>
       <description><![CDATA[
-        <p><strong>Price:</strong> 177.3 c/kg cwt</p>
-        <p><strong>Benchmark:</strong> Eastern States 16–20kg cwt</p>
-        <p><strong>Source:</strong> Meat &amp; Livestock Australia (MLA)</p>
+        <p><strong>Price:</strong> 10.6 c/kg cwt</p>
+        <p><strong>Grid:</strong> Bourke Goat Grid 38 (16 Sep 26)</p>
+        <p><strong>Processor:</strong> Thomas Foods International, Bourke</p>
+        <p><strong>Source:</strong> Agora Livestock</p>
       ]]></description>
     </item>
   </channel>
