@@ -1,5 +1,6 @@
+import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -11,6 +12,7 @@ BASE = "https://cropconnect.com.au"
 SITE_URL = f"{BASE}/sap/opu/odata/SAP/SITE_PUBLIC/Site"
 BID_URL = f"{BASE}/sap/opu/odata/SAP/BID_PUBLIC/AllBidsSet"
 MARKET_URL = f"{BASE}/cc/market/bids"
+HISTORY_FILE = Path(__file__).with_name("grain_history.json")
 
 TARGETS = {
     "Hillston APW1": ("Hillston", "APW1"),
@@ -273,11 +275,71 @@ def browser_fallback(season, site_map):
     return find_bids(rows, site_map, season) if rows else {}
 
 
-def write_xml(target, output, season, filename):
+def load_history():
+    if not HISTORY_FILE.exists():
+        return {}
+    try:
+        data = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_history(history):
+    HISTORY_FILE.write_text(json.dumps(history, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def trend_for(target, value, history):
+    if value is None:
+        return ""
+
+    now = datetime.now(timezone.utc)
+    entries = history.setdefault(target, [])
+    cutoff = now - timedelta(days=7)
+
+    previous = None
+    for entry in reversed(entries):
+        try:
+            timestamp = datetime.fromisoformat(entry["timestamp"])
+            price = float(entry["price"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if timestamp <= cutoff:
+            previous = price
+            break
+
+    entries.append({"timestamp": now.isoformat(), "price": value})
+    # Keep roughly 30 days of hourly observations so the file stays small.
+    history[target] = [
+        entry for entry in entries
+        if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()
+    ]
+
+    if previous is None:
+        return "Trend: building 7-day history"
+
+    change = value - previous
+    if abs(change) < 3:
+        direction = "Steady"
+        amount = 0
+    elif change > 0:
+        direction = "Firming"
+        amount = round(change, 2)
+    else:
+        direction = "Softer"
+        amount = round(change, 2)
+
+    if amount == 0:
+        return f"→ {direction} from 7 days ago"
+    sign = "+" if amount > 0 else ""
+    return f"{'↑' if amount > 0 else '↓'} {direction} {sign}${amount:.2f}/t from 7 days ago"
+
+
+def write_xml(target, output, trend, filename):
     now = datetime.now(timezone.utc)
     pub_date = format_datetime(now, usegmt=True)
     slug = normalise(target)
-    description = f"{output}<br>Season {season}"
+    description = f"{output}<br>{trend}" if trend else output
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -297,7 +359,7 @@ def write_xml(target, output, season, filename):
 </rss>
 '''
     Path(filename).write_text(xml, encoding="utf-8")
-    print(f"Wrote {filename}: {output}")
+    print(f"Wrote {filename}: {output} / {trend}")
 
 
 def update(location, grade, filename):
@@ -314,8 +376,11 @@ def update(location, grade, filename):
             matched[target] = fallback[target]
     value = matched.get(target)
     output = f"${value:.2f}/t" if value is not None else "Unavailable"
-    print(f"CropConnect snapshot: season={season}, target={target}, output={output}")
-    write_xml(target, output, season, filename)
+    history = load_history()
+    trend = trend_for(target, value, history) if value is not None else "Trend unavailable"
+    save_history(history)
+    print(f"CropConnect snapshot: season={season}, target={target}, output={output}, trend={trend}")
+    write_xml(target, output, trend, filename)
     return output
 
 
