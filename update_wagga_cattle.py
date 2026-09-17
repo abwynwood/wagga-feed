@@ -27,8 +27,22 @@ def cents_range(patterns, text):
         for m in re.finditer(pattern, text, re.I | re.S):
             values.extend(int(v.replace(",", "")) for v in m.groups() if v)
     if not values:
+        return None
+    return min(values), max(values)
+
+
+def range_display(value):
+    if value is None:
         return "Not reported"
-    return "%d–%dc/kg" % (min(values), max(values))
+    return "%d–%dc/kg" % value
+
+
+def carcass_value(value_range, weight_kg):
+    if value_range is None:
+        return "Not reported"
+    average_cents = (value_range[0] + value_range[1]) / 2
+    value_dollars = average_cents * weight_kg / 100
+    return f"${value_dollars:,.0f}"
 
 
 def market_direction(text):
@@ -52,17 +66,22 @@ def main():
 
         # Agora's current report uses wording such as:
         # "Feeder steers 340-400kg ... 482 to 584c/kg".
-        feeder = cents_range([
+        feeder_range = cents_range([
             r"\b(?:Light|Heavy)\s+feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bMedium[-\s]+weight feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bFeeder steers\b.{0,350}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bFeeder steers\b.{0,350}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
         ], text)
 
-        cows = cents_range([
+        cows_range = cents_range([
             r"\bHeavy cows\b.{0,250}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bLeaner(?: types)?\b.{0,250}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
         ], text)
+
+        feeder = range_display(feeder_range)
+        cows = range_display(cows_range)
+        feeder_value = carcass_value(feeder_range, 300)
+        cow_value = carcass_value(cows_range, 500)
 
         yarding_match = re.search(r"Total Yarding\s*[:\-]?\s*([\d,]+)", text, re.I)
         yarding = f"{yarding_match.group(1)} head" if yarding_match else "Not reported"
@@ -72,7 +91,9 @@ def main():
 
         description = (
             f"Feeder Steers: {feeder}<br>"
-            f"Cows: {cows}<br><br>"
+            f"300kg steer: {feeder_value}<br>"
+            f"Cows: {cows}<br>"
+            f"500kg cow: {cow_value}<br><br>"
             f"Yarding: {yarding}<br>"
             f"Market: {direction}<br>"
             f"Summary: {summary}"
