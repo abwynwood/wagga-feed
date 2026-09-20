@@ -78,6 +78,7 @@ def parse_categories(text):
         r"trade\s+lambs?\s+sold\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)",
     ], text)
     heavy = first_range([
+        r"heavy\s+(?:weights?|lambs?)\s+to\s+\d+\s*kg\s+sold\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
         r"heavy\s+weights?\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
         r"heavy\s+lambs?[^.]{0,180}?(?:from|ranged\s+from)\s+\$([\d,]+)\s+to\s+\$([\d,]+)",
     ], text)
