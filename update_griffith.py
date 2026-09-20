@@ -66,6 +66,45 @@ def market_direction(text):
         return "SOFTER"
     return "STEADY"
 
+def load_previous_categories():
+    if not OUTPUT_FILE.exists():
+        return {}
+    try:
+        root = ET.parse(OUTPUT_FILE).getroot()
+        description = root.findtext("./channel/item/description") or ""
+        categories = {}
+        for label in ["Restocker Lambs", "Trade Lambs", "Heavy Lambs", "Mutton/Ewes"]:
+            match = re.search(rf"{re.escape(label)}:\s*(?:<[^>]+>)*\$([\d,]+)(?:/hd)?(?:\s*[–-]\s*\$([\d,]+)(?:/hd)?)?", description, re.I)
+            if match:
+                low=int(match.group(1).replace(",","")); high=int((match.group(2) or match.group(1)).replace(",",""))
+                categories[label]=(low+high)/2
+        return categories
+    except Exception:
+        return {}
+
+def comparison_arrow(current, previous):
+    if previous is None:
+        return "➡️ $0/hd"
+    change=round(current-previous)
+    if change>0:
+        return "⬆️ $" + str(change) + "/hd"
+    if change<0:
+        return "⬇️ $" + str(abs(change)) + "/hd"
+    return "➡️ $0/hd"
+
+def category_value(text,label):
+    patterns={
+        "Restocker Lambs": r"(?:new\s+season\s+)?store\s+lambs?\s+to\s+\d+\s*kg\s+sold\s+to\s+\$([\d,]+)",
+        "Trade Lambs": r"trade\s+weights?\s+\d+\s*to\s*\d+\s*kg\s+(?:sold|ranged)\s+(?:from\s+)?\$([\d,]+)\s+(?:to|-)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        "Heavy Lambs": r"heavy\s+(?:weights?|lambs?)\s+to\s+\d+\s*kg\s+sold\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+    }
+    pattern=patterns.get(label)
+    if not pattern: return None
+    match=find(pattern,text)
+    if not match: return None
+    values=[int(match.group(i).replace(",","")) for i in range(1,len(match.groups())+1)]
+    return sum(values)/len(values)
+
 def parse_categories(text):
     restocker = first_single([
         r"(?:new\s+season\s+)?store\s+lambs?\s+to\s+\d+\s*kg\s+sold\s+to\s+\$([\d,]+)",
@@ -91,6 +130,7 @@ def main():
     yarding_match = find(r"Total Yarding:\s*([\d,]+)", text)
     if not date_match or not yarding_match:
         raise RuntimeError("Agora Griffith date/yarding not found")
+    previous = load_previous_categories()
     restocker, trade, heavy, mutton = parse_categories(text)
     try:
         raw_date = date_match.group(1)
@@ -108,22 +148,23 @@ def main():
             if mutton == "Not reported": mutton = sm
     except Exception:
         pass
-    market = market_direction(text)
-    summary = {"FIRM": "Prices firm to stronger.", "SOFTER": "Prices softer across the market.", "STEADY": "Prices mostly steady."}[market]
+    current_values = {"Restocker Lambs": category_value(text, "Restocker Lambs"), "Trade Lambs": category_value(text, "Trade Lambs"), "Heavy Lambs": category_value(text, "Heavy Lambs"), "Mutton/Ewes": None}
+    if mutton != "Not reported":
+        nums=[int(x.replace(",", "")) for x in re.findall(r"\$([\d,]+)/hd", mutton)]
+        if nums: current_values["Mutton/Ewes"]=sum(nums)/len(nums)
     root = ET.Element("rss", version="2.0")
     channel = ET.SubElement(root, "channel")
     ET.SubElement(channel, "title").text = "Griffith Sheep Sale"
     ET.SubElement(channel, "link").text = SOURCE_URL
     item = ET.SubElement(channel, "item")
     ET.SubElement(item, "title").text = "Griffith Sheep Sale — " + date_match.group(1)
+    changes={label:(comparison_arrow(value,previous.get(label)) if value is not None else "➡️ $0/hd") for label,value in current_values.items()}
     description = "\n".join([
-        "<b>Restocker Lambs:</b> " + restocker,
-        "<b>Trade Lambs:</b> " + trade,
-        "<b>Heavy Lambs:</b> " + heavy,
-        "<b>Mutton/Ewes:</b> " + mutton,
+        "<b>Restocker Lambs:</b> " + restocker + " (" + changes["Restocker Lambs"] + ")",
+        "<b>Trade Lambs:</b> " + trade + " (" + changes["Trade Lambs"] + ")",
+        "<b>Heavy Lambs:</b> " + heavy + " (" + changes["Heavy Lambs"] + ")",
+        "<b>Mutton/Ewes:</b> " + mutton + " (" + changes["Mutton/Ewes"] + ")",
         "<i>Yarding: " + yarding_match.group(1) + " head</i>",
-        "<i>Market: " + market + "</i>",
-        "<i>Summary: " + summary + "</i>",
     ])
     ET.SubElement(item, "description").text = description
     ET.SubElement(item, "pubDate").text = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
