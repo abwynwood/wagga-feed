@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import html
 import re
+import json
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,7 @@ from bs4 import BeautifulSoup
 
 SOURCE_URL = "https://agoralivestock.com.au/saleyard-griffith-sheep/"
 OUTPUT_FILE = Path(__file__).with_name("griffith.xml")
+HISTORY_FILE = Path(__file__).with_name("griffith_history.json")
 
 def get_text(url=SOURCE_URL):
     response = requests.get(url, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
@@ -66,21 +68,22 @@ def market_direction(text):
         return "SOFTER"
     return "STEADY"
 
-def load_previous_categories():
-    if not OUTPUT_FILE.exists():
-        return {}
+def load_previous_categories(current_date):
     try:
-        root = ET.parse(OUTPUT_FILE).getroot()
-        description = root.findtext("./channel/item/description") or ""
-        categories = {}
-        for label in ["Restocker Lambs", "Trade Lambs", "Heavy Lambs", "Mutton/Ewes"]:
-            match = re.search(rf"{re.escape(label)}:\s*(?:<[^>]+>)*\$([\d,]+)(?:/hd)?(?:\s*[–-]\s*\$([\d,]+)(?:/hd)?)?", description, re.I)
-            if match:
-                low=int(match.group(1).replace(",","")); high=int((match.group(2) or match.group(1)).replace(",",""))
-                categories[label]=(low+high)/2
-        return categories
+        history = json.loads(HISTORY_FILE.read_text(encoding="utf-8")) if HISTORY_FILE.exists() else {}
+        dates = sorted((date for date in history if date < current_date), reverse=True)
+        return history.get(dates[0], {}) if dates else {}
     except Exception:
         return {}
+
+def save_category_history(sale_date, values):
+    try:
+        history = json.loads(HISTORY_FILE.read_text(encoding="utf-8")) if HISTORY_FILE.exists() else {}
+    except Exception:
+        history = {}
+    history[sale_date] = {k: v for k, v in values.items() if v is not None}
+    keep = sorted(history)[-20:]
+    HISTORY_FILE.write_text(json.dumps({k: history[k] for k in keep}, indent=2), encoding="utf-8")
 
 def comparison_arrow(current, previous):
     if previous is None:
@@ -130,7 +133,8 @@ def main():
     yarding_match = find(r"Total Yarding:\s*([\d,]+)", text)
     if not date_match or not yarding_match:
         raise RuntimeError("Agora Griffith date/yarding not found")
-    previous = load_previous_categories()
+    sale_date = date_match.group(1)
+    previous = load_previous_categories(sale_date)
     restocker, trade, heavy, mutton = parse_categories(text)
     try:
         raw_date = date_match.group(1)
@@ -170,6 +174,7 @@ def main():
     ET.SubElement(item, "pubDate").text = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
     ET.SubElement(item, "guid").text = SOURCE_URL
     ET.ElementTree(root).write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
+    save_category_history(sale_date, current_values)
     xml = OUTPUT_FILE.read_text(encoding="utf-8")
     escaped_description = description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     xml = xml.replace("<description>" + escaped_description + "</description>", "<description><![CDATA[" + description.replace("\n", "<br>") + "]]></description>")
