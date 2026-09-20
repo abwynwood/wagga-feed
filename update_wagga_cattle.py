@@ -111,11 +111,11 @@ def main():
         yarding = f"{yarding_match.group(1)} head" if yarding_match else "Not reported"
 
         description = (
-            f"<hr><strong>Feeder Steers:</strong> {feeder} <span>({feeder_change})</span><br>"
+            f"<br><strong>Feeder Steers:</strong> {feeder} <span>({feeder_change})</span><br>"
             f"<span> (300kg steer: {feeder_value})</span><br>"
-            f"<hr><strong>Cows:</strong> {cows} <span>({cow_change})</span><br>"
+            f"<br><strong>Cows:</strong> {cows} <span>({cow_change})</span><br>"
             f"<span>(500kg cow: {cow_value})</span><br>"
-            f"<hr><i>Yarding: {yarding}</i>"
+            f"<br><i>Yarding: {yarding}</i>"
         )
 
         now = datetime.now(timezone.utc)
