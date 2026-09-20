@@ -116,10 +116,10 @@ def main():
     item = ET.SubElement(channel, "item")
     ET.SubElement(item, "title").text = "Griffith Sheep Sale — " + date_match.group(1)
     description = "\n".join([
-        "<b>Restocker Lambs Range:</b> " + restocker,
-        "<b>Trade Lambs Range:</b> " + trade,
-        "<b>Heavy Lambs Range:</b> " + heavy,
-        "<b>Mutton/Ewes Range:</b> " + mutton,
+        "<b>Restocker Lambs:</b> " + restocker,
+        "<b>Trade Lambs:</b> " + trade,
+        "<b>Heavy Lambs:</b> " + heavy,
+        "<b>Mutton/Ewes:</b> " + mutton,
         "<i>Yarding: " + yarding_match.group(1) + " head</i>",
         "<i>Market: " + market + "</i>",
         "<i>Summary: " + summary + "</i>",
