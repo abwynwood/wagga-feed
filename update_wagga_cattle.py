@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 SOURCE_URL = "https://agoralivestock.com.au/saleyard-wagga-cattle/"
 OUTPUT_FILE = Path(__file__).with_name("wagga_cattle.xml")
+HISTORY_FILE = Path(__file__).with_name("wagga_cattle_history.json")
 
 
 def get_text():
@@ -45,19 +46,36 @@ def carcass_value(value_range, weight_kg):
     return f"${value_dollars:,.0f}"
 
 
-def market_direction(text):
-    lower = text.lower()
-    if any(word in lower for word in ["strong", "stronger", "firmer", "dearer", "lifted", "gained", "competitive"]):
-        return "FIRM"
-    if any(word in lower for word in ["softer", "cheaper", "easier", "eased", "weaker", "declined"]):
-        return "SOFTER"
-    return "STEADY"
+def category_value(value_range):
+    if value_range is None:
+        return None
+    return (value_range[0] + value_range[1]) / 2
 
 
-def date_title(now):
-    day = now.day
-    suffix = "th" if 10 < day % 100 < 14 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-    return f"{day}{suffix} {now.strftime('%B %Y')}"
+def load_previous():
+    if not HISTORY_FILE.exists():
+        return {}
+    try:
+        return __import__("json").loads(HISTORY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def save_history(current):
+    history = load_previous()
+    history["current"] = current
+    HISTORY_FILE.write_text(__import__("json").dumps(history), encoding="utf-8")
+
+
+def comparison_arrow(current, previous):
+    if current is None or previous is None:
+        return "➡️ $0/hd"
+    change = round(current - previous)
+    if change > 0:
+        return f"⬆️ ${change}/hd"
+    if change < 0:
+        return f"⬇️ ${abs(change)}/hd"
+    return "➡️ $0/hd"
 
 
 def main():
@@ -80,26 +98,30 @@ def main():
         feeder_value = carcass_value(feeder_range, 300)
         cow_value = carcass_value(cows_range, 500)
 
+        previous = load_previous()
+        feeder_change = comparison_arrow(category_value(feeder_range), previous.get("feeder"))
+        cow_change = comparison_arrow(category_value(cows_range), previous.get("cows"))
+
         yarding_match = re.search(r"Total Yarding\s*[:\-]?\s*([\d,]+)", text, re.I)
         yarding = f"{yarding_match.group(1)} head" if yarding_match else "Not reported"
 
-        direction = market_direction(text)
-        summary = "Market firm to stronger." if direction == "FIRM" else "Market steady." if direction == "STEADY" else "Market softer."
-
         description = (
-            f"<strong>Feeder Steers:</strong> {feeder}<br>"
+            f"<strong>Feeder Steers:</strong> {feeder} <span>({feeder_change})</span><br>"
             f"<span> (300kg steer: {feeder_value})</span><br>"
-            f"<strong>Cows:</strong> {cows}<br>"
+            f"<strong>Cows:</strong> {cows} <span>({cow_change})</span><br>"
             f"<span>(500kg cow: {cow_value})</span><br>"
-            f"<i>Yarding: {yarding}</i><br>"
-            f"<i>Market: {direction}</i><br>"
-            f"<i>Summary: {summary}</i>"
+            f"<i>Yarding: {yarding}</i>"
         )
 
         now = datetime.now(timezone.utc)
         xml = f'''<?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0"><channel><title>Wagga Cattle Sale</title><link>{SOURCE_URL}</link><item><title>Wagga Cattle Sale — {date_title(now)}</title><description><![CDATA[{description}]]></description><pubDate>{formatdate(now.timestamp(), usegmt=True)}</pubDate><guid>{SOURCE_URL}</guid></item></channel></rss>'''
         OUTPUT_FILE.write_text(xml, encoding="utf-8")
+
+        save_history({
+            "feeder": category_value(feeder_range),
+            "cows": category_value(cows_range),
+        })
         print(description.replace("<br>", " | "))
 
     except Exception as error:
