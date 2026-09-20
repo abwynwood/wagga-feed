@@ -164,11 +164,11 @@ def main():
     ET.SubElement(item, "title").text = "Griffith Sheep Sale — " + date_match.group(1)
     changes={label:(comparison_arrow(value,previous.get(label)) if value is not None else "➡️ $0/hd") for label,value in current_values.items()}
     description = "\n".join([
-        "<b>Restocker Lambs:</b> " + restocker + " (" + changes["Restocker Lambs"] + ")",
-        "<b>Trade Lambs:</b> " + trade + " (" + changes["Trade Lambs"] + ")",
-        "<b>Heavy Lambs:</b> " + heavy + " (" + changes["Heavy Lambs"] + ")",
-        "<b>Mutton/Ewes:</b> " + mutton + " (" + changes["Mutton/Ewes"] + ")",
-        "<i>Yarding: " + yarding_match.group(1) + " head</i>",
+        "<hr><b>Restocker Lambs:</b> " + restocker + " (" + changes["Restocker Lambs"] + ")",
+        "<hr><b>Trade Lambs:</b> " + trade + " (" + changes["Trade Lambs"] + ")",
+        "<hr><b>Heavy Lambs:</b> " + heavy + " (" + changes["Heavy Lambs"] + ")",
+        "<hr><b>Mutton/Ewes:</b> " + mutton + " (" + changes["Mutton/Ewes"] + ")",
+        "<hr><i>Yarding: " + yarding_match.group(1) + " head</i>",
     ])
     ET.SubElement(item, "description").text = description
     ET.SubElement(item, "pubDate").text = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
