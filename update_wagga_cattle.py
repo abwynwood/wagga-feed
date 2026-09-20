@@ -1,5 +1,6 @@
 import html
 import re
+import json
 from datetime import datetime, timezone
 from email.utils import formatdate
 from pathlib import Path
@@ -56,15 +57,13 @@ def load_previous():
     if not HISTORY_FILE.exists():
         return {}
     try:
-        return __import__("json").loads(HISTORY_FILE.read_text(encoding="utf-8"))
+        return json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
 
 def save_history(current):
-    history = load_previous()
-    history["current"] = current
-    HISTORY_FILE.write_text(__import__("json").dumps(history), encoding="utf-8")
+    HISTORY_FILE.write_text(json.dumps(current), encoding="utf-8")
 
 
 def comparison_arrow(current, previous):
@@ -76,6 +75,12 @@ def comparison_arrow(current, previous):
     if change < 0:
         return f"⬇️ ${abs(change)}/hd"
     return "➡️ $0/hd"
+
+
+def date_title(now):
+    day = now.day
+    suffix = "th" if 10 < day % 100 < 14 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+    return f"{day}{suffix} {now.strftime('%B %Y')}"
 
 
 def main():
