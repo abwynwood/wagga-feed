@@ -145,8 +145,24 @@ def fetch_bourke_grid():
             browser.close()
 
     if not matches:
+        # Agora can occasionally fail to expose its marketplace listing even
+        # though the listing is still live. Do not break the whole Dakboard
+        # update in that case: use the most recent successfully scraped price.
+        history = load_history()
+        if history:
+            try:
+                last_price = float(history[-1]["price"])
+                print(
+                    "Agora listing unavailable; using last successfully scraped "
+                    f"Bourke goat price: {last_price:g} c/kg cwt"
+                )
+                return last_price, "last known", ""
+            except (KeyError, TypeError, ValueError):
+                pass
+
         raise RuntimeError(
-            "Current Bourke goat processor grid not found in Agora listing data"
+            "Current Bourke goat processor grid not found in Agora listing data "
+            "and no previous goat price is available"
         )
 
     def date_sort_key(item):
