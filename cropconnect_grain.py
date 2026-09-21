@@ -315,7 +315,7 @@ def trend_for(target, value, history):
     ]
 
     if previous is None:
-        return "➡️ Waiting for 7-day comparison"
+        return "➡️ $0/t"
 
     change = value - previous
     if abs(change) < 3:
