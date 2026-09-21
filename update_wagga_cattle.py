@@ -95,7 +95,9 @@ def main():
 
         cows_range = cents_range([
             r"\bHeavy cows\b.{0,250}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bHeavy cows\b.{0,250}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
             r"\bLeaner(?: types)?\b.{0,250}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bLeaner(?: types)?\b.{0,250}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
         ], text)
 
         feeder = range_display(feeder_range)
