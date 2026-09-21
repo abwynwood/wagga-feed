@@ -213,7 +213,7 @@ def trend_for(value, history):
     history[:] = [entry for entry in history if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()]
 
     if previous is None:
-        return ""
+        return "➡️ Waiting for 7-day comparison"
     change = round(value - previous, 1)
     if abs(change) < 0.5:
         return "→ Steady from 7 days ago"
