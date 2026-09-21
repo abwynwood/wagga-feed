@@ -145,26 +145,26 @@ def fetch_bourke_grid():
             browser.close()
 
     if not matches:
-        # Agora can occasionally fail to expose its marketplace listing even
-        # though the listing is still live. Do not break the whole Dakboard
-        # update in that case: use the most recent successfully scraped price.
         history = load_history()
         if history:
             try:
-                last_price = float(history[-1]["price"])
-                print(
-                    "Agora listing unavailable; using last successfully scraped "
-                    f"Bourke goat price: {last_price:g} c/kg cwt"
-                )
-                return last_price, "last known", ""
+                last = history[-1]
+                last_price = float(last["price"])
+                last_timestamp = datetime.fromisoformat(last["timestamp"])
+                age = datetime.now(timezone.utc) - last_timestamp
+                if age <= timedelta(days=3):
+                    print(
+                        "Agora listing unavailable; using last successfully scraped "
+                        f"Bourke goat price: {last_price:g} c/kg cwt"
+                    )
+                    return last_price, "last known", ""
+                print("Agora listing unavailable for more than 3 days; price unavailable.")
+                return None, "unavailable", ""
             except (KeyError, TypeError, ValueError):
                 pass
 
-        raise RuntimeError(
-            "Current Bourke goat processor grid not found in Agora listing data "
-            "and no previous goat price is available"
-        )
-
+        print("No recent goat price is available; reporting price unavailable.")
+        return None, "unavailable", ""
     def date_sort_key(item):
         try:
             return datetime.strptime(item[1], "%d %b %y")
@@ -224,8 +224,14 @@ def trend_for(value, history):
 
 def update_xml(price_cents, grid_number, date_text, trend):
     now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
-    price_dollars = price_cents / 100
-    carcass_value_15kg = price_dollars * 15
+    if price_cents is None:
+        price_line = "<p><strong>Price:</strong> Unavailable</p>"
+        carcass_line = ""
+    else:
+        price_dollars = price_cents / 100
+        carcass_value_15kg = price_dollars * 15
+        price_line = f"<p><strong>Price:</strong> {price_cents:g} c/kg cwt</p>"
+        carcass_line = f"<p>(15kg carcass: \${carcass_value_15kg:.2f})</p>"
     trend_line = f"<p>{trend}</p>" if trend else ""
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
@@ -240,8 +246,8 @@ def update_xml(price_cents, grid_number, date_text, trend):
       <guid>bourke-goat-grid</guid>
       <pubDate>{now}</pubDate>
       <description><![CDATA[
-        <p><strong>Price:</strong> {price_cents:g} c/kg cwt</p>
-        <p>(15kg carcass: ${carcass_value_15kg:.2f})</p>
+        {price_line}
+        {carcass_line}
         <p><strong>Processor:</strong> Thomas Foods International, Bourke</p>
         {trend_line}
       ]]></description>
@@ -255,9 +261,12 @@ if __name__ == "__main__":
     try:
         price_cents, grid_number, date_text = fetch_bourke_grid()
         history = load_history()
-        trend = trend_for(price_cents, history)
-        save_history(history)
-        update_xml(price_cents, grid_number, date_text, trend)
+        if price_cents is None:
+            update_xml(None, grid_number, date_text, "")
+        else:
+            trend = trend_for(price_cents, history)
+            save_history(history)
+            update_xml(price_cents, grid_number, date_text, trend)
     except Exception as error:
         print("Goat update failed:", error)
         raise
