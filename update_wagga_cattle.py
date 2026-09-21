@@ -111,13 +111,16 @@ def main():
 
         yarding_match = re.search(r"Total Yarding\s*[:\-]?\s*([\d,]+)", text, re.I)
         yarding = f"{yarding_match.group(1)} head" if yarding_match else "Not reported"
+        current_yarding = int(yarding_match.group(1).replace(",", "")) if yarding_match else None
+        previous_yarding = previous.get("yarding")
+        yarding_change = comparison_arrow(current_yarding, previous_yarding)
 
         description = (
             f"<br><strong>Feeder Steers:</strong> {feeder} <span>({feeder_change})</span><br>"
             f"<span> (300kg steer: {feeder_value})</span><br>"
             f"<br><strong>Cows:</strong> {cows} <span>({cow_change})</span><br>"
             f"<span>(500kg cow: {cow_value})</span><br>"
-            f"<br><i>Yarding: {yarding}</i>"
+            f"<br><i>Yarding: {yarding} ({yarding_change})</i>"
         )
 
         now = datetime.now(timezone.utc)
@@ -128,6 +131,7 @@ def main():
         save_history({
             "feeder": category_value(feeder_range),
             "cows": category_value(cows_range),
+            "yarding": current_yarding,
         })
         print(description.replace("<br>", " | "))
 
