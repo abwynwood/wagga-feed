@@ -11,34 +11,6 @@ HISTORY_FILE = Path(__file__).with_name("goat_history.json")
 
 
 def fetch_bourke_grid():
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        try:
-            page = browser.new_page(
-                viewport={"width": 1440, "height": 1200},
-                user_agent=(
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
-                ),
-            )
-            page.goto(AGORA_URL, wait_until="domcontentloaded", timeout=60_000)
-            page.wait_for_timeout(15_000)
-            for _ in range(3):
-                page.mouse.wheel(0, 1800)
-                page.wait_for_timeout(2_000)
-
-            # Agora embeds the listing data in the page as JSON. Read the
-            # listing's own title and HSCW price from that JSON so a price
-            # from another listing can never be accidentally paired with it.
-            documents = []
-            for frame in page.frames:
-                try:
-                    documents.append(frame.content())
-                except Exception:
-                    continue
-        finally:
-            browser.close()
-
     title_pattern = re.compile(
         r'"title"\s*:\s*"Bourke\s+Goat\s+Grid\s+(\d+[A-Za-z]?)\s*\(([^)]*)\)"',
         re.I,
@@ -47,33 +19,135 @@ def fetch_bourke_grid():
         r'"prices"\s*:\s*\{\s*"HSCW"\s*:\s*\{\s*"min"\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*,\s*"max"\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*\}',
         re.I,
     )
+    visible_title_pattern = re.compile(
+        r'Bourke\s+Goat\s+Grid\s+(\d+[A-Za-z]?)\s*\(\s*(\d{1,2}\s+[A-Za-z]{3}\s+\d{2})\s*\)',
+        re.I,
+    )
+    visible_price_pattern = re.compile(
+        r'\$\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*kg\s*HSCW',
+        re.I,
+    )
 
     matches = []
     seen = set()
-    for document in documents:
-        for title_match in title_pattern.finditer(document):
-            # The listing JSON has its prices later in the same object. Stop
-            # at the next listing title so we cannot cross into another card.
-            next_title = title_pattern.search(document, title_match.end())
-            section = document[title_match.end(): next_title.start() if next_title else title_match.end() + 15000]
-            price_match = prices_pattern.search(section)
-            if not price_match:
-                continue
-            min_price = float(price_match.group(1))
-            max_price = float(price_match.group(2))
-            if min_price != max_price:
-                raise RuntimeError(
-                    f"Bourke goat grid has an unexpected HSCW price range: {min_price}-{max_price}"
+
+    def collect(documents):
+        for document in documents:
+            for title_match in title_pattern.finditer(document):
+                next_title = title_pattern.search(document, title_match.end())
+                section = document[
+                    title_match.end():
+                    next_title.start() if next_title else title_match.end() + 15000
+                ]
+                price_match = prices_pattern.search(section)
+                if not price_match:
+                    continue
+                minimum = float(price_match.group(1))
+                maximum = float(price_match.group(2))
+                if minimum != maximum:
+                    continue
+                key = (
+                    title_match.group(1).strip(),
+                    title_match.group(2).strip(),
+                    minimum,
                 )
-            grid_text = title_match.group(1).strip()
-            date_text = title_match.group(2).strip()
-            key = (grid_text, date_text, min_price)
-            if key not in seen:
-                seen.add(key)
-                matches.append(key)
+                if key not in seen:
+                    seen.add(key)
+                    matches.append(key)
+
+            # Fallback: use the rendered page text if Agora's internal JSON
+            # is unavailable on a particular run.
+            for title_match in visible_title_pattern.finditer(document):
+                section = document[title_match.start():title_match.start() + 2500]
+                price_match = visible_price_pattern.search(section)
+                if not price_match:
+                    continue
+                price = float(price_match.group(1))
+                key = (
+                    title_match.group(1).strip(),
+                    title_match.group(2).strip(),
+                    price,
+                )
+                if key not in seen:
+                    seen.add(key)
+                    matches.append(key)
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        try:
+            page = browser.new_page(
+                viewport={"width": 1440, "height": 1400},
+                user_agent=(
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+                ),
+            )
+
+            # Agora is client-rendered and occasionally doesn't expose the
+            # marketplace listing on the first load. Retry the actual page.
+            for attempt in range(4):
+                documents = []
+                try:
+                    if attempt == 0:
+                        page.goto(
+                            AGORA_URL,
+                            wait_until="domcontentloaded",
+                            timeout=60_000,
+                        )
+                    else:
+                        page.reload(
+                            wait_until="domcontentloaded",
+                            timeout=60_000,
+                        )
+                except Exception as error:
+                    print(f"Agora load attempt {attempt + 1} failed: {error}")
+                    continue
+
+                page.wait_for_timeout(15_000 + attempt * 5_000)
+
+                for _ in range(8):
+                    page.mouse.wheel(0, 1600)
+                    page.wait_for_timeout(2_000)
+
+                try:
+                    documents.append(
+                        page.locator("html").inner_text(timeout=10_000)
+                    )
+                except Exception:
+                    pass
+
+                try:
+                    documents.append(page.content())
+                except Exception:
+                    pass
+
+                for frame in page.frames:
+                    try:
+                        documents.append(frame.content())
+                    except Exception:
+                        pass
+                    try:
+                        documents.append(
+                            frame.locator("body").inner_text(timeout=5_000)
+                        )
+                    except Exception:
+                        pass
+
+                collect(documents)
+                if matches:
+                    break
+
+                print(
+                    f"Agora goat listing not visible on attempt {attempt + 1}; "
+                    "retrying..."
+                )
+        finally:
+            browser.close()
 
     if not matches:
-        raise RuntimeError("Current Bourke goat processor grid not found in Agora listing data")
+        raise RuntimeError(
+            "Current Bourke goat processor grid not found in Agora listing data"
+        )
 
     def date_sort_key(item):
         try:
@@ -83,9 +157,13 @@ def fetch_bourke_grid():
 
     grid_text, date_text, price_dollars = max(matches, key=date_sort_key)
     price_cents = round(price_dollars * 100, 1)
-    print(f"Agora Bourke goat grid {grid_text} ({date_text}): ${price_dollars:g}/kg HSCW = {price_cents:g} c/kg cwt")
+    print(
+        f"Agora Bourke goat grid {grid_text} ({date_text}): "
+        f"${price_dollars:g}/kg HSCW "
+        f"= {price_cents:g} c/kg cwt"
+    )
+    print(f"Agora raw grid price: {price_dollars:g}/kg HSCW")
     return price_cents, grid_text, date_text
-
 
 def load_history():
     if not HISTORY_FILE.exists():
