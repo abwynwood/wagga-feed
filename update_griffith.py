@@ -163,17 +163,22 @@ def main():
     item = ET.SubElement(channel, "item")
     ET.SubElement(item, "title").text = "Griffith Sheep Sale — " + date_match.group(1)
     changes={label:(comparison_arrow(value,previous.get(label)) if value is not None else "➡️ $0/hd") for label,value in current_values.items()}
+    current_yarding = int(yarding_match.group(1).replace(",", ""))
+    previous_yarding = previous.get("Yarding")
+    yarding_change = comparison_arrow(current_yarding, previous_yarding)
+
     description = "\n".join([
         "<br><b>Restocker Lambs:</b> " + restocker + " (" + changes["Restocker Lambs"] + ")",
         "<br><b>Trade Lambs:</b> " + trade + " (" + changes["Trade Lambs"] + ")",
         "<br><b>Heavy Lambs:</b> " + heavy + " (" + changes["Heavy Lambs"] + ")",
         "<br><b>Mutton/Ewes:</b> " + mutton + " (" + changes["Mutton/Ewes"] + ")",
-        "<br><i>Yarding: " + yarding_match.group(1) + " head</i>",
+        "<br><i>Yarding: " + yarding_match.group(1) + " head (" + yarding_change + ")</i>",
     ])
     ET.SubElement(item, "description").text = description
     ET.SubElement(item, "pubDate").text = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
     ET.SubElement(item, "guid").text = SOURCE_URL
     ET.ElementTree(root).write(OUTPUT_FILE, encoding="utf-8", xml_declaration=True)
+    current_values["Yarding"] = current_yarding
     save_category_history(sale_date, current_values)
     xml = OUTPUT_FILE.read_text(encoding="utf-8")
     escaped_description = description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
