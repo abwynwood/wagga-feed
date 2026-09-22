@@ -89,17 +89,16 @@ def main():
         feeder_range = cents_range([
             r"\b(?:Light|Heavy)\s+feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bMedium[-\s]+weight feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
-            r"\b(?:Yearling|Feeder) steers\b.{0,350}?\b(?:to feed|feeders?)\b.{0,120}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
-            r"\b(?:Yearling|Feeder) steers\b.{0,350}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
-            r"\b(?:middle and )?heavyweights?\s+to feed\b.{0,150}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\b(?:Yearling|Feeder) steers\b.{0,350}?\bto feed\b.{0,150}?([\d,]+)\s*c(?:/kg)?\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\b(?:Yearling|Feeder) steers\b.{0,350}?([\d,]+)\s*c(?:/kg)?\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bmiddle and heavyweights?\s+to feed\b.{0,150}?([\d,]+)\s*c(?:/kg)?\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bFeeder steers\b.{0,350}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
         ], text)
 
         cows_range = cents_range([
-            r"\bHeavy cows\b.{0,250}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
-            r"\bHeavy cows\b.{0,250}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
-            r"\bLeaner(?: types)?\b.{0,250}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
-            r"\bLeaner(?: types)?\b.{0,250}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
+            r"\b(?:Heavy|Better finished heavy|Heavy finished) cows\b.{0,250}?([\d,]+)\s*c(?:/kg)?\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\b(?:Plainer|Leaner)(?: types)? cows?\b.{0,250}?([\d,]+)\s*c(?:/kg)?\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\bcows\b.{0,350}?([\d,]+)\s*c(?:/kg)?\s*(?:to|-)\s*([\d,]+)\s*c/kg",
         ], text)
 
         feeder = range_display(feeder_range)
