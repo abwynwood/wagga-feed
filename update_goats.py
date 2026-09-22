@@ -63,6 +63,8 @@ def fetch_bourke_grid():
                 if not price_match:
                     continue
                 price = float(price_match.group(1))
+                if not 4.0 <= price <= 9.0:
+                    continue
                 key = (
                     title_match.group(1).strip(),
                     title_match.group(2).strip(),
