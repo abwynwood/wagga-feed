@@ -46,7 +46,7 @@ jobs:
     - name: Update NSW Goat OTH Price
       run: python update_goats.py
 
-    - name: Update Wagga Cattle Averages
+    - name: Update Forbes Cattle Averages
       run: python update_wagga_cattle.py
 
     - name: Commit and push changes
