@@ -8,9 +8,9 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
-SOURCE_URL = "https://agoralivestock.com.au/saleyard-wagga-cattle/"
+SOURCE_URL = "https://agoralivestock.com.au/saleyard-forbes-cattle/"
 OUTPUT_FILE = Path(__file__).with_name("wagga_cattle.xml")
-HISTORY_FILE = Path(__file__).with_name("wagga_cattle_history.json")
+HISTORY_FILE = Path(__file__).with_name("forbes_cattle_history.json")
 
 
 def get_text():
@@ -89,7 +89,9 @@ def main():
         feeder_range = cents_range([
             r"\b(?:Light|Heavy)\s+feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bMedium[-\s]+weight feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
-            r"\bFeeder steers\b.{0,350}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\b(?:Yearling|Feeder) steers\b.{0,350}?\b(?:to feed|feeders?)\b.{0,120}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
+            r"\b(?:Yearling|Feeder) steers\b.{0,350}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
+            r"\b(?:middle and )?heavyweights?\s+to feed\b.{0,150}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bFeeder steers\b.{0,350}?([\d,]+)\s*(?:-|to)\s*([\d,]+)\s*c/kg",
         ], text)
 
@@ -125,7 +127,7 @@ def main():
 
         now = datetime.now(timezone.utc)
         xml = f'''<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0"><channel><title>Wagga Cattle Sale</title><link>{SOURCE_URL}</link><item><title>Wagga Cattle Sale — {date_title(now)}</title><description><![CDATA[{description}]]></description><pubDate>{formatdate(now.timestamp(), usegmt=True)}</pubDate><guid>{SOURCE_URL}</guid></item></channel></rss>'''
+<rss version="2.0"><channel><title>Forbes Cattle Sale</title><link>{SOURCE_URL}</link><item><title>Forbes Cattle Sale — {date_title(now)}</title><description><![CDATA[{description}]]></description><pubDate>{formatdate(now.timestamp(), usegmt=True)}</pubDate><guid>{SOURCE_URL}</guid></item></channel></rss>'''
         OUTPUT_FILE.write_text(xml, encoding="utf-8")
 
         save_history({
