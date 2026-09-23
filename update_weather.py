@@ -115,7 +115,9 @@ def build_days(forecast):
         # Prefer the period with the longest available precipitation interval
         # at each timestamp so precipitation is never double-counted.
         period = None
-        for key in ("next_6_hours", "next_1_hours"):
+        # Use the 1-hour amount whenever it is available. Only fall back to
+        # a 6-hour amount when the API has moved to its coarser time steps.
+        for key in ("next_1_hours", "next_6_hours"):
             candidate = data.get(key)
             if candidate and "precipitation_amount" in candidate.get("details", {}):
                 period = candidate
