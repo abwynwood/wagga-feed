@@ -183,7 +183,7 @@ def make_description(days):
             f"<span style=\"font-size:28px;\">{item['symbol']}</span><br>"
             f"{format_rain(item['rain'])}<br>"
             f"{item['wind_direction']} {item['wind_speed']} km/h<br>"
-            f"{item['high']}° / {item['low']}°"
+            f"{item['low']}° / {item['high']}°"
             "</td>"
         )
 
