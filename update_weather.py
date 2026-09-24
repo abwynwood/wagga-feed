@@ -192,15 +192,9 @@ def make_description(days):
 
     return (
         "<div style=\"width:100%;overflow:hidden;\">"
-        "<div style=\"text-align:center;font-weight:bold;margin-bottom:6px;\">"
-        f"10-DAY FORECAST — {html.escape(LOCATION_NAME.upper())}"
-        "</div>"
         "<table style=\"width:100%;table-layout:fixed;border-collapse:collapse;\"><tr>"
         + "".join(cells)
         + "</tr></table>"
-        "<div style=\"text-align:right;font-size:10px;margin-top:4px;\">"
-        "Forecast: MET Norway"
-        "</div>"
         "</div>"
     )
 
