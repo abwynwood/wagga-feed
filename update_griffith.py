@@ -7,13 +7,27 @@ from datetime import datetime, timezone
 from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
+from time import time
 
 SOURCE_URL = "https://agoralivestock.com.au/saleyard-griffith-sheep/"
 OUTPUT_FILE = Path(__file__).with_name("griffith.xml")
 HISTORY_FILE = Path(__file__).with_name("griffith_history.json")
 
 def get_text(url=SOURCE_URL):
-    response = requests.get(url, timeout=30, headers={"User-Agent": "wagga-feed/1.0"})
+    # Agora can serve a cached copy to automated requests even after the
+    # report has been updated. Cache-bust every request so the feed sees the
+    # same current report that is visible on the Agora webpage.
+    separator = "&" if "?" in url else "?"
+    fresh_url = f"{url}{separator}wagga_feed_ts={int(time())}"
+    response = requests.get(
+        fresh_url,
+        timeout=30,
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
+            "Cache-Control": "no-cache, no-store, max-age=0",
+            "Pragma": "no-cache",
+        },
+    )
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     return re.sub(r"\s+", " ", html.unescape(soup.get_text(" ", strip=True))).strip()
