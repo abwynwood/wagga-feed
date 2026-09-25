@@ -77,15 +77,31 @@ def comparison_arrow(current, previous):
     return "➡️ $0/hd"
 
 
-def date_title(now):
-    day = now.day
+def date_title(report_date, fallback):
+    if report_date:
+        day = report_date.day
+        suffix = "th" if 10 < day % 100 < 14 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+        return f"{day}{suffix} {report_date.strftime('%B %Y')}"
+    day = fallback.day
     suffix = "th" if 10 < day % 100 < 14 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
-    return f"{day}{suffix} {now.strftime('%B %Y')}"
+    return f"{day}{suffix} {fallback.strftime('%B %Y')}"
 
 
 def main():
     try:
         text = get_text()
+
+        report_date = None
+        report_match = re.search(r"\\bReport\\s+Date\\s*:?[\\s-]*(\\d{1,2})(?:st|nd|rd|th)?\\s+([A-Za-z]+)\\s+(\\d{4})", text, re.I)
+        if report_match:
+            try:
+                report_date = datetime.strptime(
+                    f"{report_match.group(1)} {report_match.group(2)} {report_match.group(3)}",
+                    "%d %B %Y",
+                )
+            except ValueError:
+                report_date = None
+
         feeder_range = cents_range([
             r"\b(?:Light|Heavy)\s+feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
             r"\bMedium[-\s]+weight feeder steers\b.{0,300}?\b(?:from\s+)?([\d,]+)\s*c/kg\s*(?:to|-)\s*([\d,]+)\s*c/kg",
@@ -126,7 +142,7 @@ def main():
 
         now = datetime.now(timezone.utc)
         xml = f'''<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0"><channel><title>Forbes Cattle Sale</title><link>{SOURCE_URL}</link><item><title>Forbes Cattle Sale — {date_title(now)}</title><description><![CDATA[{description}]]></description><pubDate>{formatdate(now.timestamp(), usegmt=True)}</pubDate><guid>{SOURCE_URL}</guid></item></channel></rss>'''
+<rss version="2.0"><channel><title>Forbes Cattle Sale</title><link>{SOURCE_URL}</link><item><title>Forbes Cattle Sale — {date_title(report_date, now)}</title><description><![CDATA[{description}]]></description><pubDate>{formatdate(now.timestamp(), usegmt=True)}</pubDate><guid>{SOURCE_URL}</guid></item></channel></rss>'''
         OUTPUT_FILE.write_text(xml, encoding="utf-8")
 
         save_history({
