@@ -110,37 +110,122 @@ def comparison_arrow(current, previous):
         return "⬇️ $" + str(abs(change)) + "/hd"
     return "➡️ $0/hd"
 
-def category_value(text,label):
-    patterns={
-        "Restocker Lambs": r"(?:new\s+season\s+)?store\s+lambs?\s+to\s+\d+\s*kg\s+sold\s+to\s+\$([\d,]+)",
-        "Trade Lambs": r"trade\s+weights?\s+\d+\s*to\s*\d+\s*kg\s+(?:sold|ranged)\s+(?:from\s+)?\$([\d,]+)\s+(?:to|-)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        "Heavy Lambs": r"heavy\s+(?:weights?|lambs?)\s+to\s+\d+\s*kg\s+sold\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-    }
-    pattern=patterns.get(label)
-    if not pattern: return None
-    match=find(pattern,text)
-    if not match: return None
-    values=[int(match.group(i).replace(",","")) for i in range(1,len(match.groups())+1)]
-    return sum(values)/len(values)
+def category_value(text, label):
+    """Return the midpoint of the price range used for trend comparisons."""
+    if label == "Restocker Lambs":
+        section = section_between(
+            text,
+            [r"light\\s+merinos?\\s+under\\s+\\d+\\s*kg"],
+            [r"trade\\s+weights?", r"heavy\\s+lambs?", r"mutton\\s+numbers?"],
+        )
+    elif label == "Trade Lambs":
+        section = section_between(
+            text,
+            [r"trade\\s+weights?"],
+            [r"heavy\\s+lambs?", r"mutton\\s+numbers?"],
+        )
+    elif label == "Heavy Lambs":
+        section = section_between(
+            text,
+            [r"heavy\\s+lambs?"],
+            [r"mutton\\s+numbers?", r"mutton\\s+quality"],
+        )
+    elif label == "Mutton/Ewes":
+        section = section_between(
+            text,
+            [r"mutton\\s+numbers?"],
+            [],
+        )
+    else:
+        return None
+
+    values = [
+        int(v.replace(",", ""))
+        for v in re.findall(r"\\$([\\d,]+)\\s*(?:/\\s*(?:head|hd)|(?:head|hd)\\b)", section, re.I)
+    ]
+    if not values:
+        return None
+    return (min(values) + max(values)) / 2
+
+
+def section_between(text, starts, ends):
+    start = None
+    for pattern in starts:
+        match = re.search(pattern, text, re.I)
+        if match:
+            start = match.start()
+            break
+    if start is None:
+        return ""
+    end = len(text)
+    for pattern in ends:
+        match = re.search(pattern, text[start + 1:], re.I)
+        if match:
+            end = min(end, start + 1 + match.start())
+    return text[start:end]
+
+
+def price_range_from_section(section):
+    values = [
+        int(v.replace(",", ""))
+        for v in re.findall(r"\\$([\\d,]+)\\s*(?:/\\s*(?:head|hd)|(?:head|hd)\\b)", section, re.I)
+    ]
+    if not values:
+        return None
+    return min(values), max(values)
+
+
+def display_section_range(section, single=False):
+    value_range = price_range_from_section(section)
+    if value_range is None:
+        return "Not reported"
+    if single or value_range[0] == value_range[1]:
+        return single_money(str(value_range[0]))
+    return money_range(str(value_range[0]), str(value_range[1]))
+
 
 def parse_categories(text):
-    restocker = first_single([
-        r"(?:new\s+season\s+)?store\s+lambs?\s+to\s+\d+\s*kg\s+sold\s+to\s+\$([\d,]+)",
-        r"(?:new\s+season\s+)?store\s+lambs?\s+to\s+\d+\s*kg[^.]{0,120}?\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"restocker\s+lambs?[^.]{0,160}?(?:from\s+\$([\d,]+)\s+to\s+\$([\d,]+))",
-    ], text)
-    trade = first_range([
-        r"trade\s+weights?\s+\d+\s*to\s*\d+\s*kg\s+(?:sold|ranged)\s+(?:from\s+)?\$([\d,]+)\s+(?:to|-)\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"trade\s+weights?[^.]{0,160}?\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"trade\s+lambs?\s+sold\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)",
-    ], text)
-    heavy = first_range([
-        r"heavy\s+(?:weights?|lambs?)\s+to\s+\d+\s*kg\s+sold\s+from\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"heavy\s+weights?\s+\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
-        r"heavy\s+lambs?[^.]{0,180}?(?:from|ranged\s+from)\s+\$([\d,]+)\s+to\s+\$([\d,]+)",
-    ], text)
-    mutton = mutton_or_ewes_range(text)
+    # The Agora commentary changes wording between sales. Use the section
+    # headings rather than one exact sentence so new reports keep working.
+    restocker_section = section_between(
+        text,
+        [r"light\\s+merinos?\\s+under\\s+\\d+\\s*kg"],
+        [r"trade\\s+weights?", r"heavy\\s+lambs?", r"mutton\\s+numbers?"],
+    )
+    trade_section = section_between(
+        text,
+        [r"trade\\s+weights?"],
+        [r"heavy\\s+lambs?", r"mutton\\s+numbers?"],
+    )
+    heavy_section = section_between(
+        text,
+        [r"heavy\\s+lambs?"],
+        [r"mutton\\s+numbers?", r"mutton\\s+quality"],
+    )
+    mutton_section = section_between(
+        text,
+        [r"mutton\\s+numbers?"],
+        [],
+    )
+
+    restocker = display_section_range(restocker_section, single=False)
+    trade = display_section_range(trade_section, single=False)
+    heavy = display_section_range(heavy_section, single=False)
+    mutton = display_section_range(mutton_section, single=False)
+
     return restocker, trade, heavy, mutton
+
+
+def yarding_comparison(current, previous):
+    if current is None or previous is None:
+        return "➡️ 0 head"
+    change = round(current - previous)
+    if change > 0:
+        return f"⬆️ {change:,} head"
+    if change < 0:
+        return f"⬇️ {abs(change):,} head"
+    return "➡️ 0 head"
+
 
 def main():
     text = get_text()
@@ -180,7 +265,7 @@ def main():
     changes={label:(comparison_arrow(value,previous.get(label)) if value is not None else "➡️ $0/hd") for label,value in current_values.items()}
     current_yarding = int(yarding_match.group(1).replace(",", ""))
     previous_yarding = previous.get("Yarding")
-    yarding_change = comparison_arrow(current_yarding, previous_yarding)
+    yarding_change = yarding_comparison(current_yarding, previous_yarding)
 
     description = "\n".join([
         "<br><b>Restocker Lambs:</b> " + restocker + " (" + changes["Restocker Lambs"] + ")",
