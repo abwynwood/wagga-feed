@@ -92,7 +92,7 @@ def main():
         text = get_text()
 
         report_date = None
-        report_match = re.search(r"\\bReport\\s+Date\\s*:?[\\s-]*(\\d{1,2})(?:st|nd|rd|th)?\\s+([A-Za-z]+)\\s+(\\d{4})", text, re.I)
+        report_match = re.search(r"\bReport\s+Date\s*:?[\s-]*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})", text, re.I)
         if report_match:
             try:
                 report_date = datetime.strptime(
