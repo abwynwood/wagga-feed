@@ -110,44 +110,6 @@ def comparison_arrow(current, previous):
         return "⬇️ $" + str(abs(change)) + "/hd"
     return "➡️ $0/hd"
 
-def category_value(text, label):
-    """Return the midpoint of the price range used for trend comparisons."""
-    if label == "Restocker Lambs":
-        section = section_between(
-            text,
-            [r"light\\s+merinos?\\s+under\\s+\\d+\\s*kg"],
-            [r"trade\\s+weights?", r"heavy\\s+lambs?", r"mutton\\s+numbers?"],
-        )
-    elif label == "Trade Lambs":
-        section = section_between(
-            text,
-            [r"trade\\s+weights?"],
-            [r"heavy\\s+lambs?", r"mutton\\s+numbers?"],
-        )
-    elif label == "Heavy Lambs":
-        section = section_between(
-            text,
-            [r"heavy\\s+lambs?"],
-            [r"mutton\\s+numbers?", r"mutton\\s+quality"],
-        )
-    elif label == "Mutton/Ewes":
-        section = section_between(
-            text,
-            [r"mutton\\s+numbers?"],
-            [],
-        )
-    else:
-        return None
-
-    values = [
-        int(v.replace(",", ""))
-        for v in re.findall(r"\\$([\\d,]+)\\s*(?:/\\s*(?:head|hd)|(?:head|hd)\\b)", section, re.I)
-    ]
-    if not values:
-        return None
-    return (min(values) + max(values)) / 2
-
-
 def section_between(text, starts, ends):
     start = None
     for pattern in starts:
@@ -168,52 +130,83 @@ def section_between(text, starts, ends):
 def price_range_from_section(section):
     values = [
         int(v.replace(",", ""))
-        for v in re.findall(r"\\$([\\d,]+)\\s*(?:/\\s*(?:head|hd)|(?:head|hd)\\b)", section, re.I)
+        for v in re.findall(
+            r"\$([\d,]+)\s*(?:/\s*(?:head|hd)|(?:head|hd)\b)",
+            section,
+            re.I,
+        )
     ]
     if not values:
         return None
     return min(values), max(values)
 
 
-def display_section_range(section, single=False):
+def display_section_range(section):
     value_range = price_range_from_section(section)
     if value_range is None:
         return "Not reported"
-    if single or value_range[0] == value_range[1]:
+    if value_range[0] == value_range[1]:
         return single_money(str(value_range[0]))
     return money_range(str(value_range[0]), str(value_range[1]))
 
 
-def parse_categories(text):
-    # The Agora commentary changes wording between sales. Use the section
-    # headings rather than one exact sentence so new reports keep working.
+def category_sections(text):
     restocker_section = section_between(
         text,
-        [r"light\\s+merinos?\\s+under\\s+\\d+\\s*kg"],
-        [r"trade\\s+weights?", r"heavy\\s+lambs?", r"mutton\\s+numbers?"],
+        [r"light\s+merinos?\s+under\s+\d+\s*kg"],
+        [r"trade\s+weights?", r"heavy\s+lambs?", r"mutton\s+numbers?"],
     )
     trade_section = section_between(
         text,
-        [r"trade\\s+weights?"],
-        [r"heavy\\s+lambs?", r"mutton\\s+numbers?"],
-    )
-    heavy_section = section_between(
-        text,
-        [r"heavy\\s+lambs?"],
-        [r"mutton\\s+numbers?", r"mutton\\s+quality"],
+        [r"trade\s+weights?"],
+        [r"heavy\s+lambs?", r"mutton\s+numbers?"],
     )
     mutton_section = section_between(
         text,
-        [r"mutton\\s+numbers?"],
+        [r"mutton\s+numbers?"],
         [],
     )
 
-    restocker = display_section_range(restocker_section, single=False)
-    trade = display_section_range(trade_section, single=False)
-    heavy = display_section_range(heavy_section, single=False)
-    mutton = display_section_range(mutton_section, single=False)
+    # Heavy lambs are deliberately limited to the named "heavy lambs to
+    # 30kg" line. Do not accidentally include extra-heavy/super-heavy lambs.
+    heavy_match = re.search(
+        r"heavy\s+lambs?\s+to\s+30\s*kg.{0,180}?\$([\d,]+)\s+to\s+\$([\d,]+)\s*/?\s*(?:head|hd)",
+        text,
+        re.I | re.S,
+    )
+    heavy_section = heavy_match.group(0) if heavy_match else section_between(
+        text,
+        [r"heavy\s+lambs?"],
+        [r"mutton\s+numbers?"],
+    )
 
-    return restocker, trade, heavy, mutton
+    return restocker_section, trade_section, heavy_section, mutton_section
+
+
+def parse_categories(text):
+    restocker_section, trade_section, heavy_section, mutton_section = category_sections(text)
+    return (
+        display_section_range(restocker_section),
+        display_section_range(trade_section),
+        display_section_range(heavy_section),
+        display_section_range(mutton_section),
+    )
+
+
+def category_value(text, label):
+    sections = category_sections(text)
+    index = {
+        "Restocker Lambs": 0,
+        "Trade Lambs": 1,
+        "Heavy Lambs": 2,
+        "Mutton/Ewes": 3,
+    }.get(label)
+    if index is None:
+        return None
+    value_range = price_range_from_section(sections[index])
+    if value_range is None:
+        return None
+    return (value_range[0] + value_range[1]) / 2
 
 
 def yarding_comparison(current, previous):
