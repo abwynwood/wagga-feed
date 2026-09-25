@@ -8,6 +8,7 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 from time import time
+from playwright.sync_api import sync_playwright
 
 SOURCE_URL = "https://agoralivestock.com.au/saleyard-griffith-sheep/"
 OUTPUT_FILE = Path(__file__).with_name("griffith.xml")
@@ -16,19 +17,36 @@ HISTORY_FILE = Path(__file__).with_name("griffith_history.json")
 def get_page(url=SOURCE_URL):
     separator = "&" if "?" in url else "?"
     fresh_url = f"{url}{separator}wagga_feed_ts={int(time())}"
-    response = requests.get(
-        fresh_url,
-        timeout=30,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
-            "Cache-Control": "no-cache, no-store, max-age=0",
-            "Pragma": "no-cache",
-        },
-    )
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    text = re.sub(r"\\s+", " ", html.unescape(soup.get_text(" ", strip=True))).strip()
-    return soup, text
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(
+            user_agent="Mozilla/5.0 (compatible; wagga-feed/1.0)"
+        )
+        page.goto(fresh_url, wait_until="networkidle", timeout=60000)
+
+        # The Griffith results are published in Google Sheets iframes further
+        # down the Agora page. Capture every rendered iframe and look for the
+        # structured results table there.
+        frames = [page.main_frame] + list(page.frames)
+        frame_html = []
+        frame_text = []
+
+        for frame in frames:
+            try:
+                html_content = frame.content()
+                text_content = frame.locator("body").inner_text(timeout=5000)
+                frame_html.append(html_content)
+                frame_text.append(text_content)
+            except Exception:
+                continue
+
+        main_html = page.content()
+        main_text = page.locator("body").inner_text(timeout=10000)
+
+        browser.close()
+
+    return main_html, main_text, frame_html, frame_text
 
 
 def get_text(url=SOURCE_URL):
@@ -156,85 +174,89 @@ TABLE_CATEGORIES = [
 
 
 def clean_cell(value):
-    return re.sub(r"\\s+", " ", value.replace("\xa0", " ")).strip()
+    return re.sub(r"\s+", " ", value.replace("\xa0", " ")).strip()
 
 
 def weight_bounds(weight_text):
     value = clean_cell(weight_text).replace("kg", "").strip()
-    match = re.fullmatch(r"(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)", value)
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", value)
     if match:
         return float(match.group(1)), float(match.group(2))
-    match = re.fullmatch(r"(\\d+(?:\\.\\d+)?)\\.1\\+", value)
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\.1\+", value)
     if match:
         # 22.1+ means the lower bound is 22.1 with no upper bound.
         return float(match.group(1)) + 0.1, None
-    match = re.fullmatch(r"(\\d+(?:\\.\\d+)?)\\+", value)
+    match = re.fullmatch(r"(\d+(?:\.\d+)?)\+", value)
     if match:
         return float(match.group(1)), None
     return None, None
 
 
-def parse_results_table(soup):
+def parse_results_table(frame_html, frame_text):
     """
-    Read the structured Griffith results table instead of the changing
-    prose commentary. Blank category/sale-prefix cells inherit the last
-    non-blank value, as they do visually in the table.
+    Parse the Google Sheets results table rendered inside Agora's iframe.
+    We inspect all frames because Agora can change which published sheet
+    contains the current Griffith results.
     """
-    candidates = []
-    for table in soup.find_all("table"):
-        header_text = clean_cell(table.get_text(" ", strip=True))
-        if "Category - NSW" in header_text and "Sale Prefix - NSW" in header_text and "$ / head" in header_text:
-            candidates.append(table)
-
-    if not candidates:
-        return {}
-
-    table = candidates[-1]
-    rows = table.find_all("tr")
     records = []
-    current_category = ""
-    current_prefix = ""
 
-    for row in rows:
-        cells = [clean_cell(cell.get_text(" ", strip=True)) for cell in row.find_all(["td", "th"])]
-        if len(cells) < 9:
+    for html_content, text_content in zip(frame_html, frame_text):
+        if "Griffith results" not in text_content:
             continue
-        if cells[0] in {"Category - NSW", "Category - NSW "}:
-            continue
+        soup = BeautifulSoup(html_content, "html.parser")
 
-        # The body columns are:
-        # Category, Sale Prefix, Weight Range, Score, Head, Change,
-        # $/head Min, $/head Avg, $/head Max, Change, Carcass Min, Avg.
-        category = cells[0] or current_category
-        prefix = cells[1] or current_prefix
-        current_category = category
-        current_prefix = prefix
+        for table in soup.find_all("table"):
+            rows = table.find_all("tr")
+            if not rows:
+                continue
 
-        if not category or not prefix:
-            continue
+            current_category = ""
+            current_prefix = ""
 
-        weight_text = cells[2]
-        min_price = re.sub(r"[^0-9]", "", cells[6])
-        max_price = re.sub(r"[^0-9]", "", cells[8])
-        if not min_price or not max_price:
-            continue
+            for row in rows:
+                cells = [
+                    clean_cell(cell.get_text(" ", strip=True))
+                    for cell in row.find_all(["td", "th"])
+                ]
+                if len(cells) < 9:
+                    continue
 
-        low_weight, high_weight = weight_bounds(weight_text)
-        try:
-            records.append({
-                "category": category,
-                "sale_prefix": prefix,
-                "weight_low": low_weight,
-                "weight_high": high_weight,
-                "price_min": int(min_price),
-                "price_max": int(max_price),
-            })
-        except ValueError:
-            continue
+                joined = " | ".join(cells)
+                if "Category" in joined and "$ / head" in joined:
+                    continue
+
+                category = cells[0] or current_category
+                prefix = cells[1] or current_prefix
+
+                # Google Sheets may render blank cells as inherited visually.
+                if category:
+                    current_category = category
+                if prefix:
+                    current_prefix = prefix
+
+                if not current_category or not current_prefix:
+                    continue
+
+                min_price = re.sub(r"[^0-9]", "", cells[6])
+                max_price = re.sub(r"[^0-9]", "", cells[8])
+                if not min_price or not max_price:
+                    continue
+
+                low_weight, high_weight = weight_bounds(cells[2])
+
+                records.append({
+                    "category": current_category,
+                    "sale_prefix": current_prefix,
+                    "weight_low": low_weight,
+                    "weight_high": high_weight,
+                    "price_min": int(min_price),
+                    "price_max": int(max_price),
+                })
 
     results = {}
     for spec in TABLE_CATEGORIES:
         selected = []
+
         for record in records:
             if record["category"].lower() != spec["category"].lower():
                 continue
@@ -242,9 +264,13 @@ def parse_results_table(soup):
                 continue
 
             if spec["min_weight"] is not None:
-                if record["weight_high"] is None or record["weight_low"] is None:
+                if record["weight_low"] is None:
                     continue
-                if record["weight_low"] < spec["min_weight"] or record["weight_high"] > spec["max_weight"]:
+                # Include rows whose range overlaps 20.1-26.0kg.
+                if record["weight_high"] is not None:
+                    if record["weight_high"] < spec["min_weight"] or record["weight_low"] > spec["max_weight"]:
+                        continue
+                elif record["weight_low"] > spec["max_weight"]:
                     continue
 
             selected.append(record)
@@ -289,15 +315,15 @@ def yarding_comparison(current, previous):
 
 
 def main():
-    soup, text = get_page()
-    date_match = find(r"Report Date:\\s*(\\d{1,2}(?:st|nd|rd|th)?\\s+[A-Za-z]+\\s+\\d{4})", text)
-    yarding_match = find(r"Total Yarding:\\s*([\\d,]+)", text)
+    main_html, text, frame_html, frame_text = get_page()
+    date_match = find(r"Report Date:\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})", text)
+    yarding_match = find(r"Total Yarding:\s*([\d,]+)", text)
     if not date_match or not yarding_match:
         raise RuntimeError("Agora Griffith date/yarding not found")
 
     sale_date = date_match.group(1)
     previous = load_previous_categories(sale_date)
-    table_results = parse_results_table(soup)
+    table_results = parse_results_table(frame_html, frame_text)
 
     current_values = {
         spec["label"]: category_value(table_results, spec["label"])
