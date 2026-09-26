@@ -9,10 +9,15 @@ from pathlib import Path
 from time import time
 
 import requests
-from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 
 SOURCE_URL = "https://agoralivestock.com.au/saleyard-forbes-cattle/"
+GVIZ_CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vTJCYUTqmjXBC_SfhIIE-dzxih0HwuiTjLqIats2wurbtEmW8zs-6DiNtBxqTs_HQvkps6Pey63q4kV/"
+    "gviz/tq?tqx=out:csv&gid=161375687"
+)
+
 TABLE_CSV_URL = (
     "https://docs.google.com/spreadsheets/d/e/"
     "2PACX-1vTJCYUTqmjXBC_SfhIIE-dzxih0HwuiTjLqIats2wurbtEmW8zs-6DiNtBxqTs_HQvkps6Pey63q4kV/"
@@ -95,32 +100,6 @@ def parse_number(value):
         return None
 
 
-def fetch_results_table_rows():
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        try:
-            page = browser.new_page()
-            page.goto(SOURCE_URL, wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(5000)
-
-            for frame in page.frames:
-                if "docs.google.com/spreadsheets" not in frame.url:
-                    continue
-                if "gid=161375687" not in frame.url:
-                    continue
-
-                rows = frame.locator("table.waffle tr").evaluate_all(
-                    """rows => rows.map(row => Array.from(row.querySelectorAll('td, th')).map(cell => (cell.innerText || '').trim()))"""
-                )
-                if rows:
-                    print(f"Forbes rendered table rows: {len(rows)}")
-                    return rows
-
-            raise ValueError("Forbes rendered results table not found in Google Sheets iframe")
-        finally:
-            browser.close()
-
-
 def parse_results_table_rows(rows):
     header_index = None
 
@@ -185,87 +164,53 @@ def parse_results_table_rows(rows):
 
 
 def fetch_results_csv():
-    response = requests.get(
-        TABLE_CSV_URL + f"&_={int(time())}",
-        timeout=30,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
-            "Cache-Control": "no-cache, no-store, max-age=0",
-        },
-    )
-    response.raise_for_status()
-    if "Category - NSW" not in response.text:
-        raise ValueError("Forbes published results CSV did not contain the expected table")
-    return response.text
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
+        "Cache-Control": "no-cache, no-store, max-age=0",
+    }
+    for url in (GVIZ_CSV_URL + f"&_={int(time())}", TABLE_CSV_URL + f"&_={int(time())}"):
+        response = requests.get(url, timeout=30, headers=headers)
+        response.raise_for_status()
+        if "Category - NSW" in response.text and "Range - NSW" in response.text:
+            print(f"Forbes results CSV loaded: {len(response.text)} bytes")
+            return response.text
+    raise ValueError("Forbes published results CSV did not contain the expected table")
 
 def parse_results_table(csv_text):
     rows = list(csv.reader(io.StringIO(csv_text)))
     header_index = None
-
     for i, row in enumerate(rows):
         joined = " | ".join(clean(cell) for cell in row).casefold()
-        if (
-            "category - nsw" in joined
-            and "range - nsw" in joined
-            and "sale prefix - nsw" in joined
-        ):
+        if "category - nsw" in joined and "range - nsw" in joined and "sale prefix - nsw" in joined:
             header_index = i
             break
-
     if header_index is None:
         raise ValueError("Forbes results table header not found")
-
     header = [clean(cell).casefold() for cell in rows[header_index]]
-    avg_index = None
-    for i, cell in enumerate(header):
-        if "$/head" in cell and "avg" in cell:
-            avg_index = i
-            break
-
-    if avg_index is None:
-        avg_index = len(header) - 2
-
+    column = {
+        "category": next((i for i, cell in enumerate(header) if "category - nsw" in cell), 0),
+        "range": next((i for i, cell in enumerate(header) if "range - nsw" in cell), 1),
+        "sale_prefix": next((i for i, cell in enumerate(header) if "sale prefix - nsw" in cell), 2),
+        "score": next((i for i, cell in enumerate(header) if "score - nsw" in cell), 3),
+        "score_number": next((i for i, cell in enumerate(header) if "score number" in cell), 4),
+        "dollar_avg": next((i for i, cell in enumerate(header) if "$/head" in cell and "avg" in cell), None),
+    }
+    if column["dollar_avg"] is None:
+        raise ValueError("Forbes $/head Avg column not found")
     records = []
-    current_category = ""
-    current_range = ""
-    current_prefix = ""
-
+    current_category = current_range = current_prefix = ""
     for raw in rows[header_index + 1:]:
         cells = [clean(v) for v in raw]
-        if len(cells) < 6:
-            continue
-
         cells += [""] * max(0, len(header) - len(cells))
-        current_category = cells[0] or current_category
-        current_range = cells[1] or current_range
-        current_prefix = cells[2] or current_prefix
-        score = cells[3] if len(cells) > 3 else ""
-        score_number = cells[4] if len(cells) > 4 else ""
-        avg = parse_number(cells[avg_index]) if avg_index < len(cells) else None
-
-        if not (
-            current_category
-            and current_range
-            and current_prefix
-            and score
-            and score_number
-            and avg is not None
-        ):
-            continue
-
-        records.append(
-            {
-                "category": current_category,
-                "range": current_range,
-                "sale_prefix": current_prefix,
-                "score": score,
-                "score_number": score_number,
-                "dollar_avg": avg,
-            }
-        )
-
+        if cells[column["category"]]: current_category = cells[column["category"]]
+        if cells[column["range"]]: current_range = cells[column["range"]]
+        if cells[column["sale_prefix"]]: current_prefix = cells[column["sale_prefix"]]
+        score = cells[column["score"]]
+        score_number = cells[column["score_number"]]
+        avg = parse_number(cells[column["dollar_avg"]])
+        if not (current_category and current_range and current_prefix and score_number and avg is not None): continue
+        records.append({"category": current_category, "range": current_range, "sale_prefix": current_prefix, "score": score, "score_number": score_number, "dollar_avg": avg})
     return records
-
 
 def normalise_sale_prefix(value):
     value = clean(value).casefold()
@@ -333,11 +278,7 @@ def main():
         page_text = get_page_text(page)
         report_date = parse_report_date(page_text)
 
-        try:
-            results = parse_results_table_rows(fetch_results_table_rows())
-        except Exception as rendered_error:
-            print("Forbes rendered table failed, falling back to CSV:", rendered_error)
-            results = parse_results_table(fetch_results_csv())
+        results = parse_results_table(fetch_results_csv())
         current = {
             key: find_target(results, target)
             for key, target in TARGETS.items()
