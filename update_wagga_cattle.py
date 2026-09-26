@@ -178,14 +178,33 @@ def parse_results_table(csv_text):
     return records
 
 
+def normalise_sale_prefix(value):
+    value = clean(value).casefold()
+    aliases = {
+        "processor": "pr",
+        "pr": "pr",
+        "feeder": "fd",
+        "fd": "fd",
+        "restocker": "rs",
+        "rs": "rs",
+    }
+    return aliases.get(value, value)
+
+
 def find_target(results, target):
+    target_category = clean(target["category"]).casefold()
+    target_range = clean(target["range"]).replace(" ", "").casefold()
+    target_prefix = normalise_sale_prefix(target["sale_prefix"])
+    target_score = clean(target["score"]).casefold()
+    target_score_number = clean(target["score_number"]).replace(".0", "")
+
     for row in results:
         if (
-            row["category"].casefold() == target["category"].casefold()
-            and row["range"].replace(" ", "") == target["range"].replace(" ", "")
-            and row["sale_prefix"].casefold() == target["sale_prefix"].casefold()
-            and row["score"].casefold() == target["score"].casefold()
-            and row["score_number"] == target["score_number"]
+            clean(row["category"]).casefold() == target_category
+            and clean(row["range"]).replace(" ", "").casefold() == target_range
+            and normalise_sale_prefix(row["sale_prefix"]) == target_prefix
+            and clean(row["score"]).casefold() == target_score
+            and clean(row["score_number"]).replace(".0", "") == target_score_number
         ):
             return row["dollar_avg"]
 
