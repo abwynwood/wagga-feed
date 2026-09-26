@@ -26,7 +26,7 @@ TARGETS = {
         "category": "Cows",
         "range": "520+",
         "sale_prefix": "Processor",
-        "score": "D",
+        "score": None,
         "score_number": "4",
     },
     "feeder": {
@@ -195,7 +195,7 @@ def find_target(results, target):
     target_category = clean(target["category"]).casefold()
     target_range = clean(target["range"]).replace(" ", "").casefold()
     target_prefix = normalise_sale_prefix(target["sale_prefix"])
-    target_score = clean(target["score"]).casefold()
+    target_score = clean(target["score"]).casefold() if target.get("score") else None
     target_score_number = clean(target["score_number"]).replace(".0", "")
 
     for row in results:
@@ -203,7 +203,7 @@ def find_target(results, target):
             clean(row["category"]).casefold() == target_category
             and clean(row["range"]).replace(" ", "").casefold() == target_range
             and normalise_sale_prefix(row["sale_prefix"]) == target_prefix
-            and clean(row["score"]).casefold() == target_score
+            and (target_score is None or clean(row["score"]).casefold() == target_score)
             and clean(row["score_number"]).replace(".0", "") == target_score_number
         ):
             return row["dollar_avg"]
