@@ -1,6 +1,4 @@
-import csv
 import html
-import io
 import re
 import json
 from datetime import datetime, timezone
@@ -11,11 +9,6 @@ import requests
 from bs4 import BeautifulSoup
 
 SOURCE_URL = "https://agoralivestock.com.au/saleyard-forbes-cattle/"
-TABLE_CSV_URL = (
-    "https://docs.google.com/spreadsheets/d/e/"
-    "2PACX-1vTJCYUTqmjXBC_SfhIIE-dzxih0HwuiTjLqIats2wurbtEmW8zs-6DiNtBxqTs_HQvkps6Pey63q4kV/"
-    "pub?gid=161375687&single=true&output=csv"
-)
 OUTPUT_FILE = Path(__file__).with_name("wagga_cattle.xml")
 HISTORY_FILE = Path(__file__).with_name("forbes_cattle_history.json")
 
@@ -43,14 +36,17 @@ def clean(value):
     return re.sub(r"\s+", " ", (value or "").strip())
 
 
-def get_page_text():
+def get_page():
     response = requests.get(
         SOURCE_URL,
         timeout=30,
         headers={"User-Agent": "wagga-feed/1.0"},
     )
     response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
+    return BeautifulSoup(response.text, "html.parser")
+
+
+def get_page_text(soup):
     text = soup.get_text(" ", strip=True)
     text = html.unescape(text).replace("\xa0", " ")
     return re.sub(r"\s+", " ", text).strip()
@@ -90,9 +86,22 @@ def parse_number(value):
         return None
 
 
-def fetch_results_csv():
+def fetch_results_html(page_soup):
+    iframe = None
+    for frame in page_soup.find_all("iframe"):
+        src = frame.get("src", "")
+        if "gid=161375687" in src:
+            iframe = src
+            break
+
+    if not iframe:
+        raise ValueError("Forbes results iframe not found")
+
+    if iframe.startswith("//"):
+        iframe = "https:" + iframe
+
     response = requests.get(
-        TABLE_CSV_URL,
+        iframe,
         timeout=30,
         headers={"User-Agent": "wagga-feed/1.0"},
     )
@@ -100,16 +109,26 @@ def fetch_results_csv():
     return response.text
 
 
-def parse_results_table(csv_text):
-    rows = list(csv.reader(io.StringIO(csv_text)))
-    header_index = None
+def parse_results_table(html_text):
+    soup = BeautifulSoup(html_text, "html.parser")
+    rows = []
 
+    for table in soup.find_all("table"):
+        for tr in table.find_all("tr"):
+            cells = tr.find_all(["th", "td"])
+            if cells:
+                rows.append([clean(cell.get_text(" ", strip=True)) for cell in cells])
+
+    if not rows:
+        raise ValueError("Forbes results table not found in iframe")
+
+    header_index = None
     for i, row in enumerate(rows):
-        normalized = [clean(cell).lower() for cell in row]
+        normalized = [cell.lower() for cell in row]
         if (
-            "category - nsw" in normalized
-            and "range - nsw" in normalized
-            and "sale prefix - nsw" in normalized
+            any("category - nsw" in cell for cell in normalized)
+            and any("range - nsw" in cell for cell in normalized)
+            and any("sale prefix - nsw" in cell for cell in normalized)
         ):
             header_index = i
             break
@@ -117,11 +136,11 @@ def parse_results_table(csv_text):
     if header_index is None:
         raise ValueError("Forbes results table header not found")
 
-    header = [clean(cell).lower() for cell in rows[header_index]]
-    avg_index = None
+    header = [cell.lower() for cell in rows[header_index]]
 
+    avg_index = None
     for i, cell in enumerate(header):
-        if cell in {"$/head avg", "$ / head avg", "$/head - avg", "$ / head - avg"}:
+        if "$/head" in cell and "avg" in cell:
             avg_index = i
             break
 
@@ -134,11 +153,9 @@ def parse_results_table(csv_text):
     current_prefix = ""
 
     for raw_row in rows[header_index + 1:]:
-        row = [clean(cell) for cell in raw_row]
+        row = raw_row + [""] * max(0, len(header) - len(raw_row))
         if not any(row):
             continue
-
-        row += [""] * max(0, len(header) - len(row))
 
         if row[0]:
             current_category = row[0]
@@ -184,11 +201,9 @@ def load_history():
         return {}
     try:
         data = json.loads(HISTORY_FILE.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            return data
+        return data if isinstance(data, dict) else {}
     except Exception:
-        pass
-    return {}
+        return {}
 
 
 def save_history(history):
@@ -198,20 +213,22 @@ def save_history(history):
 def comparison_arrow(current, previous):
     if current is None or previous is None:
         return "➡️ $0/hd"
+
     change = round(current - previous)
     if change > 0:
-        return f"⬆️ ${change}/hd"
+        return f"⬆️ {chr(36)}{change}/hd"
     if change < 0:
-        return f"⬇️ ${abs(change)}/hd"
+        return f"⬇️ {chr(36)}{abs(change)}/hd"
     return "➡️ $0/hd"
 
 
 def main():
     try:
-        page_text = get_page_text()
+        page = get_page()
+        page_text = get_page_text(page)
         report_date = parse_report_date(page_text)
 
-        results = parse_results_table(fetch_results_csv())
+        results = parse_results_table(fetch_results_html(page))
         current = {key: find_target(results, target) for key, target in TARGETS.items()}
 
         missing = [TARGETS[key]["label"] for key, value in current.items() if value is None]
@@ -231,15 +248,20 @@ def main():
         feeder_change = comparison_arrow(current["feeder"], previous.get("feeder"))
 
         description = (
-            f"<strong>Cows (&gt;500kg):</strong> av ${current['cows']:,.0f} ({cow_change})<br>"
-            f"<strong>Feeder Steers (330-400kg):</strong> av ${current['feeder']:,.0f} ({feeder_change})"
+            f"<strong>Cows (&gt;500kg):</strong> av {chr(36)}{current['cows']:,.0f} ({cow_change})<br>"
+            f"<strong>Feeder Steers (330-400kg):</strong> av {chr(36)}{current['feeder']:,.0f} ({feeder_change})"
         )
 
         history[sale_key] = {
             "cows": round(current["cows"], 2),
             "feeder": round(current["feeder"], 2),
         }
-        save_history(dict(sorted(history.items())[-12:]))
+
+        dated_history = {
+            key: value for key, value in history.items()
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", key)
+        }
+        save_history(dict(sorted(dated_history.items())[-12:]))
 
         now = datetime.now(timezone.utc)
         xml = f'''<?xml version="1.0" encoding="utf-8"?>
