@@ -1,4 +1,6 @@
 import html
+import csv
+import io
 import re
 import json
 from datetime import datetime, timezone
@@ -86,103 +88,58 @@ def parse_number(value):
         return None
 
 
-def fetch_results_html(page_soup):
-    iframe = None
-    for frame in page_soup.find_all("iframe"):
-        src = frame.get("src", "")
-        if "gid=161375687" in src:
-            iframe = src
-            break
-
-    if not iframe:
-        raise ValueError("Forbes results iframe not found")
-
-    if iframe.startswith("//"):
-        iframe = "https:" + iframe
-
+def fetch_results_csv():
     response = requests.get(
-        iframe,
+        SHEET_CSV_URL + f"&_={int(time())}",
         timeout=30,
-        headers={"User-Agent": "wagga-feed/1.0"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
+            "Cache-Control": "no-cache, no-store, max-age=0",
+        },
     )
     response.raise_for_status()
+    if "Category - NSW" not in response.text:
+        raise ValueError("Forbes published results CSV did not contain the expected table")
     return response.text
-
-
-def parse_results_table(html_text):
-    soup = BeautifulSoup(html_text, "html.parser")
-    rows = []
-
-    for table in soup.find_all("table"):
-        for tr in table.find_all("tr"):
-            cells = tr.find_all(["th", "td"])
-            if cells:
-                rows.append([clean(cell.get_text(" ", strip=True)) for cell in cells])
-
-    if not rows:
-        raise ValueError("Forbes results table not found in iframe")
-
+def parse_results_table(csv_text):
+    rows = list(csv.reader(io.StringIO(csv_text)))
     header_index = None
     for i, row in enumerate(rows):
-        normalized = [cell.lower() for cell in row]
-        if (
-            any("category - nsw" in cell for cell in normalized)
-            and any("range - nsw" in cell for cell in normalized)
-            and any("sale prefix - nsw" in cell for cell in normalized)
-        ):
+        joined = " | ".join(clean(cell) for cell in row).casefold()
+        if "category - nsw" in joined and "range - nsw" in joined and "sale prefix - nsw" in joined:
             header_index = i
             break
-
     if header_index is None:
         raise ValueError("Forbes results table header not found")
 
-    header = [cell.lower() for cell in rows[header_index]]
-
+    header = [clean(cell).casefold() for cell in rows[header_index]]
     avg_index = None
     for i, cell in enumerate(header):
         if "$/head" in cell and "avg" in cell:
             avg_index = i
             break
-
     if avg_index is None:
         avg_index = len(header) - 2
 
-    results = []
+    records = []
     current_category = ""
     current_range = ""
     current_prefix = ""
-
-    for raw_row in rows[header_index + 1:]:
-        row = raw_row + [""] * max(0, len(header) - len(raw_row))
-        if not any(row):
+    for raw in rows[header_index + 1:]:
+        cells = [clean(v) for v in raw]
+        if len(cells) < 6:
             continue
-
-        if row[0]:
-            current_category = row[0]
-        if row[1]:
-            current_range = row[1]
-        if row[2]:
-            current_prefix = row[2]
-
-        score = row[3] if len(row) > 3 else ""
-        score_number = row[4] if len(row) > 4 else ""
-        dollar_avg = parse_number(row[avg_index]) if avg_index < len(row) else None
-
-        if not score or not score_number or dollar_avg is None:
+        cells += [""] * max(0, len(header) - len(cells))
+        current_category = cells[0] or current_category
+        current_range = cells[1] or current_range
+        current_prefix = cells[2] or current_prefix
+        score = cells[3] if len(cells) > 3 else ""
+        score_number = cells[4] if len(cells) > 4 else ""
+        avg = parse_number(cells[avg_index]) if avg_index < len(cells) else None
+        if not (current_category and current_range and current_prefix and score and score_number and avg is not None):
             continue
-
-        results.append({
-            "category": current_category,
-            "range": current_range,
-            "sale_prefix": current_prefix,
-            "score": score,
-            "score_number": score_number,
-            "dollar_avg": dollar_avg,
-        })
-
-    return results
-
-
+        records.append({"category": current_category, "range": current_range, "sale_prefix": current_prefix, "score": score, "score_number": score_number, "dollar_avg": avg})
+    return records
 def find_target(results, target):
     for row in results:
         if (
@@ -228,7 +185,7 @@ def main():
         page_text = get_page_text(page)
         report_date = parse_report_date(page_text)
 
-        results = parse_results_table(fetch_results_html(page))
+        results = parse_results_table(fetch_results_csv())
         current = {key: find_target(results, target) for key, target in TARGETS.items()}
 
         missing = [TARGETS[key]["label"] for key, value in current.items() if value is None]
