@@ -250,6 +250,10 @@ def main():
             for key, target in TARGETS.items()
         }
 
+        cow_candidates = [row for row in results if "cow" in clean(row["category"]).casefold()]
+        print("Forbes cow candidates:", cow_candidates)
+        print("Forbes target rows sample:", results[:20])
+
         missing = [
             TARGETS[key]["label"]
             for key, value in current.items()
