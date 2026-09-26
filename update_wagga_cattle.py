@@ -200,9 +200,9 @@ def comparison_arrow(current, previous):
         return "➡️ $0/hd"
     change = round(current - previous)
     if change > 0:
-        return f"⬆️ \${change}/hd"
+        return f"⬆️ ${change}/hd"
     if change < 0:
-        return f"⬇️ \${abs(change)}/hd"
+        return f"⬇️ ${abs(change)}/hd"
     return "➡️ $0/hd"
 
 
@@ -231,8 +231,8 @@ def main():
         feeder_change = comparison_arrow(current["feeder"], previous.get("feeder"))
 
         description = (
-            f"<strong>Cows (&gt;500kg):</strong> av \${current['cows']:,.0f} ({cow_change})<br>"
-            f"<strong>Feeder Steers (330-400kg):</strong> av \${current['feeder']:,.0f} ({feeder_change})"
+            f"<strong>Cows (&gt;500kg):</strong> av ${current['cows']:,.0f} ({cow_change})<br>"
+            f"<strong>Feeder Steers (330-400kg):</strong> av ${current['feeder']:,.0f} ({feeder_change})"
         )
 
         history[sale_key] = {
