@@ -6,12 +6,13 @@ import json
 from datetime import datetime, timezone
 from email.utils import formatdate
 from pathlib import Path
+from time import time
 
 import requests
 from bs4 import BeautifulSoup
 
 SOURCE_URL = "https://agoralivestock.com.au/saleyard-forbes-cattle/"
-OUTPUT_FILE = Path(__file__).with_name("wagga_cattle.xml")
+TABLE_CSV_URL = (\n    "https://docs.google.com/spreadsheets/d/e/"\n    "2PACX-1vTJCYUTqmjXBC_SfhIIE-dzxih0HwuiTjLqIats2wurbtEmW8zs-6DiNtBxqTs_HQvkps6Pey63q4kV/"\n    "pub?gid=161375687&single=true&output=csv"\n)\nOUTPUT_FILE = Path(__file__).with_name("wagga_cattle.xml")
 HISTORY_FILE = Path(__file__).with_name("forbes_cattle_history.json")
 
 TARGETS = {
@@ -227,10 +228,8 @@ def main():
         print(description.replace("<br>", " | "))
 
     except Exception as error:
-        if OUTPUT_FILE.exists():
-            print("Update failed; retaining previous feed:", error)
-        else:
-            raise
+        print("Forbes cattle update FAILED:", error)
+        raise
 
 
 if __name__ == "__main__":
