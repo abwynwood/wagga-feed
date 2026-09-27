@@ -186,38 +186,99 @@ def fetch_results_csv():
 def parse_results_table(csv_text):
     rows = list(csv.reader(io.StringIO(csv_text)))
     header_index = None
+
     for i, row in enumerate(rows):
         joined = " | ".join(clean(cell) for cell in row).casefold()
-        if "category - nsw" in joined and "range - nsw" in joined and "sale prefix - nsw" in joined:
+        if (
+            "category - nsw" in joined
+            and "range - nsw" in joined
+            and "sale prefix - nsw" in joined
+        ):
             header_index = i
             break
+
     if header_index is None:
         raise ValueError("Forbes results table header not found")
-    header = [clean(cell).casefold() for cell in rows[header_index]]
-    column = {
-        "category": next((i for i, cell in enumerate(header) if "category - nsw" in cell), 0),
-        "range": next((i for i, cell in enumerate(header) if "range - nsw" in cell), 1),
-        "sale_prefix": next((i for i, cell in enumerate(header) if "sale prefix - nsw" in cell), 2),
-        "score": next((i for i, cell in enumerate(header) if "score - nsw" in cell), 3),
-        "score_number": next((i for i, cell in enumerate(header) if "score number" in cell), 4),
-        "dollar_avg": next((i for i, cell in enumerate(header) if "$/head" in cell and "avg" in cell), None),
+
+    # The published sheet uses a two-row header: the $/head group is
+    # on one row and Min/Avg/Max are on the following row.
+    header1 = [clean(cell).casefold() for cell in rows[header_index]]
+    header2 = [
+        clean(cell).casefold()
+        for cell in rows[header_index + 1]
+    ] if header_index + 1 < len(rows) else []
+
+    width = max(len(header1), len(header2))
+    header = []
+    for i in range(width):
+        parts = []
+        if i < len(header1) and header1[i]:
+            parts.append(header1[i])
+        if i < len(header2) and header2[i]:
+            parts.append(header2[i])
+        header.append(" ".join(parts))
+
+    def find_column(*needles, default=None):
+        for i, cell in enumerate(header):
+            if all(needle in cell for needle in needles):
+                return i
+        return default
+
+    columns = {
+        "category": find_column("category - nsw", default=0),
+        "range": find_column("range - nsw", default=1),
+        "sale_prefix": find_column("sale prefix - nsw", default=2),
+        "score": find_column("score - nsw", default=3),
+        "score_number": find_column("score number", default=4),
+        "dollar_avg": find_column("$/head", "avg"),
     }
-    if column["dollar_avg"] is None:
-        raise ValueError("Forbes $/head Avg column not found")
+
+    if columns["dollar_avg"] is None:
+        raise ValueError(
+            "Forbes $/head Avg column not found; combined header was: "
+            + " | ".join(header)
+        )
+
     records = []
-    current_category = current_range = current_prefix = ""
-    for raw in rows[header_index + 1:]:
+    current_category = ""
+    current_range = ""
+    current_prefix = ""
+
+    for raw in rows[header_index + 2:]:
         cells = [clean(v) for v in raw]
         cells += [""] * max(0, len(header) - len(cells))
-        if cells[column["category"]]: current_category = cells[column["category"]]
-        if cells[column["range"]]: current_range = cells[column["range"]]
-        if cells[column["sale_prefix"]]: current_prefix = cells[column["sale_prefix"]]
-        score = cells[column["score"]]
-        score_number = cells[column["score_number"]]
-        avg = parse_number(cells[column["dollar_avg"]])
-        if not (current_category and current_range and current_prefix and score_number and avg is not None): continue
-        records.append({"category": current_category, "range": current_range, "sale_prefix": current_prefix, "score": score, "score_number": score_number, "dollar_avg": avg})
+
+        if cells[columns["category"]]:
+            current_category = cells[columns["category"]]
+        if cells[columns["range"]]:
+            current_range = cells[columns["range"]]
+        if cells[columns["sale_prefix"]]:
+            current_prefix = cells[columns["sale_prefix"]]
+
+        score = cells[columns["score"]]
+        score_number = cells[columns["score_number"]]
+        avg = parse_number(cells[columns["dollar_avg"]])
+
+        if not (
+            current_category
+            and current_range
+            and current_prefix
+            and score_number
+            and avg is not None
+        ):
+            continue
+
+        records.append({
+            "category": current_category,
+            "range": current_range,
+            "sale_prefix": current_prefix,
+            "score": score,
+            "score_number": score_number,
+            "dollar_avg": avg,
+        })
+
     return records
+
 
 def normalise_sale_prefix(value):
     value = clean(value).casefold()
