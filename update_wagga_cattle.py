@@ -40,7 +40,7 @@ TARGETS = {
         "category": "Yearling Steer",
         "range": "330-400",
         "sale_prefix": "Feeder",
-        "score": "C",
+        "score": None,
         "score_number": "2",
     },
 }
