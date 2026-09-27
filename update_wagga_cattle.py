@@ -66,6 +66,13 @@ def get_page_text(soup):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def parse_yarding(text):
+    match = re.search(r"Total\s+Yarding\s*:\s*([\d,]+)", text, re.I)
+    if not match:
+        return None
+    return int(match.group(1).replace(",", ""))
+
+
 def parse_report_date(text):
     match = re.search(
         r"\bReport\s+Date\s*:?\s*[\s-]*(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})",
@@ -314,6 +321,18 @@ def save_history(history):
     HISTORY_FILE.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
 
+def comparison_head_arrow(current, previous):
+    if current is None or previous is None:
+        return "➡️ 0 head"
+
+    change = round(current - previous)
+    if change > 0:
+        return f"⬆️ {change:,} head"
+    if change < 0:
+        return f"⬇️ {abs(change):,} head"
+    return "➡️ 0 head"
+
+
 def comparison_arrow(current, previous):
     if current is None or previous is None:
         return "➡️ $0/hd"
@@ -331,6 +350,9 @@ def main():
         page = get_page()
         page_text = get_page_text(page)
         report_date = parse_report_date(page_text)
+        yarding = parse_yarding(page_text)
+        if yarding is None:
+            raise ValueError("Forbes total yarding not found")
 
         results = parse_results_table(fetch_results_csv())
         current = {
