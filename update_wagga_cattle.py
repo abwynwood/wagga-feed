@@ -200,23 +200,9 @@ def parse_results_table(csv_text):
     if header_index is None:
         raise ValueError("Forbes results table header not found")
 
-    # The published sheet uses a two-row header: the $/head group is
-    # on one row and Min/Avg/Max are on the following row.
-    header1 = [clean(cell).casefold() for cell in rows[header_index]]
-    header2 = [
-        clean(cell).casefold()
-        for cell in rows[header_index + 1]
-    ] if header_index + 1 < len(rows) else []
-
-    width = max(len(header1), len(header2))
-    header = []
-    for i in range(width):
-        parts = []
-        if i < len(header1) and header1[i]:
-            parts.append(header1[i])
-        if i < len(header2) and header2[i]:
-            parts.append(header2[i])
-        header.append(" ".join(parts))
+    # The Forbes CSV has one real header row. The following row is
+    # already the first cattle record, so do not consume it as a header.
+    header = [clean(cell).casefold() for cell in rows[header_index]]
 
     def find_column(*needles, default=None):
         for i, cell in enumerate(header):
@@ -228,23 +214,22 @@ def parse_results_table(csv_text):
         "category": find_column("category - nsw", default=0),
         "range": find_column("range - nsw", default=1),
         "sale_prefix": find_column("sale prefix - nsw", default=2),
-        "score": find_column("score - nsw", default=3),
-        "score_number": find_column("score number", default=4),
-        "dollar_avg": find_column("$/head", "avg"),
+        "score": find_column("muscle score - nsw", default=3),
+        "score_number": find_column("fat score - nsw", default=4),
     }
 
-    if columns["dollar_avg"] is None:
-        raise ValueError(
-            "Forbes $/head Avg column not found; combined header was: "
-            + " | ".join(header)
-        )
+    # The final three columns are $/head Min, Avg and Max.
+    # We want the middle one.
+    if len(header) < 3:
+        raise ValueError("Forbes results table has too few columns")
+    columns["dollar_avg"] = len(header) - 2
 
     records = []
     current_category = ""
     current_range = ""
     current_prefix = ""
 
-    for raw in rows[header_index + 2:]:
+    for raw in rows[header_index + 1:]:
         cells = [clean(v) for v in raw]
         cells += [""] * max(0, len(header) - len(cells))
 
@@ -277,6 +262,7 @@ def parse_results_table(csv_text):
             "dollar_avg": avg,
         })
 
+    print("Forbes parsed records:", len(records))
     return records
 
 
