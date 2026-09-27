@@ -353,7 +353,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()def fetch_results_table_rows():
+    main()\n\ndef fetch_results_table_rows():
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         try:
