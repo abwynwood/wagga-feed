@@ -391,15 +391,20 @@ def main():
         feeder_change = comparison_arrow(
             current["feeder"], previous.get("feeder")
         )
+        yarding_change = comparison_head_arrow(
+            yarding, previous.get("yarding")
+        )
 
         description = (
             f"<strong>Cows (&gt;500kg):</strong> av ${current['cows']:,.0f} ({cow_change})<br>"
-            f"<strong>Feeder Steers (330-400kg):</strong> av ${current['feeder']:,.0f} ({feeder_change})"
+            f"<strong>Feeder Steers (330-400kg):</strong> av ${current['feeder']:,.0f} ({feeder_change})<br>"
+            f"<em>Yarding: {yarding:,} head ({yarding_change})</em>"
         )
 
         history[sale_key] = {
             "cows": round(current["cows"], 2),
             "feeder": round(current["feeder"], 2),
+            "yarding": yarding,
         }
 
         dated_history = {
