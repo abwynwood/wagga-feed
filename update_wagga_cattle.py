@@ -322,8 +322,8 @@ def main():
             else "<strong>Cows (&gt;500kg):</strong> Unavailable"
         )
         description = (
-            cow_line + "<br>"
-            f"<strong>Feeder Steers (330-400kg):</strong> av ${current['feeder']:,.0f} ({feeder_change})<br>"
+            cow_line + "<br><br>"
+            f"<strong>Feeder Steers (330-400kg):</strong> av ${current['feeder']:,.0f} ({feeder_change})<br><br>"
             f"<em>Yarding: {yarding:,} head ({yarding_change})</em>"
         )
 
