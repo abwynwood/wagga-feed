@@ -170,25 +170,59 @@ def parse_results_table_rows(rows):
     return records
 
 
-def parse_csv_report_date(csv_text):
-    """Find the sale/report date published with the Forbes results sheet."""
-    rows = list(csv.reader(io.StringIO(csv_text)))
-    for row in rows[:20]:
-        for cell in row:
-            value = clean(cell)
-            m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})\b", value, re.I)
-            if m:
-                try:
-                    return datetime.strptime(f"{m.group(1)} {m.group(2)} {m.group(3)}", "%d %B %Y")
-                except ValueError:
-                    pass
-            m = re.search(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b", value)
-            if m:
-                try:
-                    return datetime.strptime(f"{m.group(1)}/{m.group(2)}/{m.group(3)}", "%d/%m/%Y")
-                except ValueError:
-                    pass
+def parse_embedded_date(text):
+    """Find a full Australian-style sale date embedded in published sheet text."""
+    text = html.unescape(text or "").replace("\xa0", " ")
+    patterns = (
+        r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})\b",
+        r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.I):
+            try:
+                if len(match.groups()) == 3 and "/" in match.group(0):
+                    return datetime.strptime(
+                        f"{match.group(1)}/{match.group(2)}/{match.group(3)}",
+                        "%d/%m/%Y",
+                    )
+                return datetime.strptime(
+                    f"{match.group(1)} {match.group(2)} {match.group(3)}",
+                    "%d %B %Y",
+                )
+            except ValueError:
+                continue
     return None
+
+
+def parse_csv_report_date(csv_text):
+    """Find the sale/report date in the published CSV, if it contains one."""
+    rows = list(csv.reader(io.StringIO(csv_text)))
+    for row in rows:
+        value = " ".join(clean(cell) for cell in row)
+        date = parse_embedded_date(value)
+        if date:
+            return date
+    return None
+
+
+def fetch_sheet_report_date():
+    """Try the published Google Sheet HTML, whose title/header may carry the sale date."""
+    url = (
+        "https://docs.google.com/spreadsheets/d/e/"
+        "2PACX-1vTJCYUTqmjXBC_SfhIIE-dzxih0HwuiTjLqIats2wurbtEmW8zs-6DiNtBxqTs_HQvkps6Pey63q4kV/"
+        "pubhtml?gid=161375687&single=true"
+    )
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
+        "Cache-Control": "no-cache, no-store, max-age=0",
+    }
+    response = requests.get(url + f"&_={int(time())}", timeout=30, headers=headers)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    visible_text = soup.get_text(" ", strip=True)
+    date = parse_embedded_date(visible_text)
+    print(f"Forbes published sheet HTML loaded: {len(response.text)} bytes; embedded sale date={date}")
+    return date
 
 
 def fetch_results_csv():
@@ -376,11 +410,18 @@ def main():
             raise ValueError("Forbes total yarding not found")
 
         results_csv = fetch_results_csv()
-        results_date = parse_csv_report_date(results_csv)
         if report_date is None:
             raise ValueError("Forbes report date not found on Agora page")
+
+        results_date = parse_csv_report_date(results_csv)
         if results_date is None:
-            raise ValueError("Forbes results sheet sale date not found; refusing to use unverified data")
+            try:
+                results_date = fetch_sheet_report_date()
+            except Exception as error:
+                print(f"Forbes published sheet HTML unavailable: {error}")
+
+        if results_date is None:
+            raise ValueError("Forbes results sheet sale date not found in CSV or published sheet HTML; refusing to use unverified data")
         if results_date.date() != report_date.date():
             raise ValueError(
                 f"Forbes results sheet is stale: sheet date {results_date:%Y-%m-%d} "
