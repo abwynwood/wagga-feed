@@ -154,8 +154,9 @@ def parse_results_table(csv_text):
         "sale_prefix": find_column("sale prefix - nsw", default=2),
         "score": find_column("muscle score - nsw", default=3),
         "score_number": find_column("fat score - nsw", default=4),
-        # The published CSV has Min, Avg and Max as its final three value columns.
+        # Published table ends with Min, Avg, Max.
         "dollar_avg": len(header) - 2,
+    }
 
     records = []
     current_category = ""
