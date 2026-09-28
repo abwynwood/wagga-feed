@@ -154,11 +154,8 @@ def parse_results_table(csv_text):
         "sale_prefix": find_column("sale prefix - nsw", default=2),
         "score": find_column("muscle score - nsw", default=3),
         "score_number": find_column("fat score - nsw", default=4),
-        # In the Forbes published table the final three columns are\n        # $/head Min, Avg and Max. The middle of those three is Avg.\n        "dollar_avg": len(header) - 2,
-    }
-
-    if columns["dollar_avg"] is None:
-        raise ValueError("Forbes $/head Avg column not found")
+        # The published CSV has Min, Avg and Max as its final three value columns.
+        "dollar_avg": len(header) - 2,
 
     records = []
     current_category = ""
