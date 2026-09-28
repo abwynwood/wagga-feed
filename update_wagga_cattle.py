@@ -32,16 +32,12 @@ TARGETS = {
         "category": "Cows",
         "range": "520+",
         "sale_prefix": "Processor",
-        "score": None,
-        "score_number": "3",
     },
     "feeder": {
         "label": "Feeder Steers (330-400kg)",
         "category": "Yearling Steer",
         "range": "330-400",
         "sale_prefix": "Feeder",
-        "score": None,
-        "score_number": "2",
     },
 }
 
@@ -107,124 +103,6 @@ def parse_number(value):
         return None
 
 
-def parse_results_table_rows(rows):
-    header_index = None
-
-    for i, row in enumerate(rows):
-        joined = " | ".join(clean(cell) for cell in row).casefold()
-        if (
-            "category - nsw" in joined
-            and "range - nsw" in joined
-            and "sale prefix - nsw" in joined
-        ):
-            header_index = i
-            break
-
-    if header_index is None:
-        raise ValueError("Forbes results table header not found")
-
-    header = [clean(cell).casefold() for cell in rows[header_index]]
-    avg_index = None
-    for i, cell in enumerate(header):
-        if "$/head" in cell and "avg" in cell:
-            avg_index = i
-            break
-
-    if avg_index is None:
-        avg_index = len(header) - 2
-
-    records = []
-    current_category = ""
-    current_range = ""
-    current_prefix = ""
-
-    for raw in rows[header_index + 1:]:
-        cells = [clean(v) for v in raw]
-        cells += [""] * max(0, len(header) - len(cells))
-
-        current_category = cells[0] or current_category
-        current_range = cells[1] or current_range
-        current_prefix = cells[2] or current_prefix
-        score = cells[3] if len(cells) > 3 else ""
-        score_number = cells[4] if len(cells) > 4 else ""
-        avg = parse_number(cells[avg_index]) if avg_index < len(cells) else None
-
-        if not (
-            current_category
-            and current_range
-            and current_prefix
-            and score_number
-            and avg is not None
-        ):
-            continue
-
-        records.append({
-            "category": current_category,
-            "range": current_range,
-            "sale_prefix": current_prefix,
-            "score": score,
-            "score_number": score_number,
-            "dollar_avg": avg,
-        })
-
-    return records
-
-
-def parse_embedded_date(text):
-    """Find a full Australian-style sale date embedded in published sheet text."""
-    text = html.unescape(text or "").replace("\xa0", " ")
-    patterns = (
-        r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})\b",
-        r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b",
-    )
-    for pattern in patterns:
-        for match in re.finditer(pattern, text, re.I):
-            try:
-                if len(match.groups()) == 3 and "/" in match.group(0):
-                    return datetime.strptime(
-                        f"{match.group(1)}/{match.group(2)}/{match.group(3)}",
-                        "%d/%m/%Y",
-                    )
-                return datetime.strptime(
-                    f"{match.group(1)} {match.group(2)} {match.group(3)}",
-                    "%d %B %Y",
-                )
-            except ValueError:
-                continue
-    return None
-
-
-def parse_csv_report_date(csv_text):
-    """Find the sale/report date in the published CSV, if it contains one."""
-    rows = list(csv.reader(io.StringIO(csv_text)))
-    for row in rows:
-        value = " ".join(clean(cell) for cell in row)
-        date = parse_embedded_date(value)
-        if date:
-            return date
-    return None
-
-
-def fetch_sheet_report_date():
-    """Try the published Google Sheet HTML, whose title/header may carry the sale date."""
-    url = (
-        "https://docs.google.com/spreadsheets/d/e/"
-        "2PACX-1vTJCYUTqmjXBC_SfhIIE-dzxih0HwuiTjLqIats2wurbtEmW8zs-6DiNtBxqTs_HQvkps6Pey63q4kV/"
-        "pubhtml?gid=161375687&single=true"
-    )
-    headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
-        "Cache-Control": "no-cache, no-store, max-age=0",
-    }
-    response = requests.get(url + f"&_={int(time())}", timeout=30, headers=headers)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    visible_text = soup.get_text(" ", strip=True)
-    date = parse_embedded_date(visible_text)
-    print(f"Forbes published sheet HTML loaded: {len(response.text)} bytes; embedded sale date={date}")
-    return date
-
-
 def fetch_results_csv():
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
@@ -262,8 +140,6 @@ def parse_results_table(csv_text):
     if header_index is None:
         raise ValueError("Forbes results table header not found")
 
-    # The Forbes CSV has one real header row. The following row is
-    # already the first cattle record, so do not consume it as a header.
     header = [clean(cell).casefold() for cell in rows[header_index]]
 
     def find_column(*needles, default=None):
@@ -278,13 +154,11 @@ def parse_results_table(csv_text):
         "sale_prefix": find_column("sale prefix - nsw", default=2),
         "score": find_column("muscle score - nsw", default=3),
         "score_number": find_column("fat score - nsw", default=4),
+        "dollar_avg": find_column("$/head", "avg"),
     }
 
-    # The final three columns are $/head Min, Avg and Max.
-    # We want the middle one.
-    if len(header) < 3:
-        raise ValueError("Forbes results table has too few columns")
-    columns["dollar_avg"] = len(header) - 2
+    if columns["dollar_avg"] is None:
+        raise ValueError("Forbes $/head Avg column not found")
 
     records = []
     current_category = ""
@@ -306,13 +180,7 @@ def parse_results_table(csv_text):
         score_number = cells[columns["score_number"]]
         avg = parse_number(cells[columns["dollar_avg"]])
 
-        if not (
-            current_category
-            and current_range
-            and current_prefix
-            and score_number
-            and avg is not None
-        ):
+        if not (current_category and current_range and current_prefix and score_number and avg is not None):
             continue
 
         records.append({
@@ -328,6 +196,7 @@ def parse_results_table(csv_text):
     return records
 
 
+
 def normalise_sale_prefix(value):
     value = clean(value).casefold()
     aliases = {
@@ -341,24 +210,26 @@ def normalise_sale_prefix(value):
     return aliases.get(value, value)
 
 
-def find_target(results, target):
+def find_target_values(results, target):
     target_category = clean(target["category"]).casefold()
     target_range = clean(target["range"]).replace(" ", "").casefold()
     target_prefix = normalise_sale_prefix(target["sale_prefix"])
-    target_score = clean(target["score"]).casefold() if target.get("score") else None
-    target_score_number = clean(target["score_number"]).replace(".0", "")
 
+    by_score = {}
     for row in results:
         if (
             clean(row["category"]).casefold() == target_category
             and clean(row["range"]).replace(" ", "").casefold() == target_range
             and normalise_sale_prefix(row["sale_prefix"]) == target_prefix
-            and (target_score is None or clean(row["score"]).casefold() == target_score)
-            and clean(row["score_number"]).replace(".0", "") == target_score_number
+            and clean(row["score_number"]).replace(".0", "") in {"2", "3"}
         ):
-            return row["dollar_avg"]
+            by_score[clean(row["score_number"]).replace(".0", "")] = row["dollar_avg"]
 
-    return None
+    selected = [by_score[str(score)] for score in (2, 3) if str(score) in by_score]
+    if not selected:
+        return None, {}
+    return sum(selected) / len(selected), by_score
+
 
 
 def load_history():
@@ -409,40 +280,22 @@ def main():
         if yarding is None:
             raise ValueError("Forbes total yarding not found")
 
-        results_csv = fetch_results_csv()
         if report_date is None:
             raise ValueError("Forbes report date not found on Agora page")
 
-        results_date = parse_csv_report_date(results_csv)
-        if results_date is None:
-            try:
-                results_date = fetch_sheet_report_date()
-            except Exception as error:
-                print(f"Forbes published sheet HTML unavailable: {error}")
-
-        if results_date is None:
-            raise ValueError("Forbes results sheet sale date not found in CSV or published sheet HTML; refusing to use unverified data")
-        if results_date.date() != report_date.date():
-            raise ValueError(
-                f"Forbes results sheet is stale: sheet date {results_date:%Y-%m-%d} "
-                f"does not match Agora report date {report_date:%Y-%m-%d}"
-            )
-        print(f"Forbes results date verified: {results_date:%Y-%m-%d}")
+        results_csv = fetch_results_csv()
         results = parse_results_table(results_csv)
-        current = {
-            key: find_target(results, target)
-            for key, target in TARGETS.items()
-        }
 
-        cow_candidates = [row for row in results if "cow" in clean(row["category"]).casefold()]
-        print("Forbes cow candidates:", cow_candidates)
-        print("Forbes target rows sample:", results[:20])
+        current = {}
+        selected_scores = {}
+        for key, target in TARGETS.items():
+            current[key], selected_scores[key] = find_target_values(results, target)
 
-        # A sale may legitimately have no fat-score 3 cows. Keep the cattle
-        # feed running and show that cow grade as unavailable until a matching
-        # row appears. Feeder steers remain required.
+        print("Forbes selected cow fat scores:", selected_scores["cows"])
+        print("Forbes selected feeder fat scores:", selected_scores["feeder"])
+
         if current["feeder"] is None:
-            raise ValueError("Forbes table values not found: Feeder Steers (330-400kg)")
+            raise ValueError("Forbes table values not found: Yearling Steer > 330-400 > Feeder with fat score 2 or 3")
 
         history = load_history()
         sale_key = (report_date or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
