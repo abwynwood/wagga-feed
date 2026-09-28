@@ -303,13 +303,13 @@ def category_value(table_results, label):
 
 def yarding_comparison(current, previous):
     if current is None or previous is None:
-        return "➡️ 0 head"
+        return "→ 0 head"
     change = round(current - previous)
     if change > 0:
-        return f"⬆️ {change:,} head"
+        return f"↑ {change:,} head"
     if change < 0:
-        return f"⬇️ {abs(change):,} head"
-    return "➡️ 0 head"
+        return f"↓ {abs(change):,} head"
+    return "→ 0 head"
 
 
 def main():
