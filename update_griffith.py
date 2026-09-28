@@ -120,13 +120,13 @@ def save_category_history(sale_date, values):
 
 def comparison_arrow(current, previous):
     if previous is None:
-        return "➡️ $0/hd"
+        return "→ $0/hd"
     change=round(current-previous)
     if change>0:
-        return "⬆️ $" + str(change) + "/hd"
+        return "↑ $" + str(change) + "/hd"
     if change<0:
-        return "⬇️ $" + str(abs(change)) + "/hd"
-    return "➡️ $0/hd"
+        return "↓ $" + str(abs(change)) + "/hd"
+    return "→ $0/hd"
 
 def section_between(text, starts, ends):
     start = None
