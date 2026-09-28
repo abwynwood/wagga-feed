@@ -33,7 +33,7 @@ TARGETS = {
         "range": "520+",
         "sale_prefix": "Processor",
         "score": None,
-        "score_number": "4",
+        "score_number": "3",
     },
     "feeder": {
         "label": "Feeder Steers (330-400kg)",
