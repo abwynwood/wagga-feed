@@ -364,15 +364,11 @@ def main():
         print("Forbes cow candidates:", cow_candidates)
         print("Forbes target rows sample:", results[:20])
 
-        missing = [
-            TARGETS[key]["label"]
-            for key, value in current.items()
-            if value is None
-        ]
-        if missing:
-            raise ValueError(
-                "Forbes table values not found: " + ", ".join(missing)
-            )
+        # A sale may legitimately have no fat-score 4 cows. Keep the cattle
+        # feed running and show that cow grade as unavailable until a matching
+        # row appears. Feeder steers remain required.
+        if current["feeder"] is None:
+            raise ValueError("Forbes table values not found: Feeder Steers (330-400kg)")
 
         history = load_history()
         sale_key = (report_date or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
@@ -387,7 +383,7 @@ def main():
 
         cow_change = comparison_arrow(
             current["cows"], previous.get("cows")
-        )
+        ) if current["cows"] is not None else None
         feeder_change = comparison_arrow(
             current["feeder"], previous.get("feeder")
         )
@@ -395,17 +391,24 @@ def main():
             yarding, previous.get("yarding")
         )
 
+        cow_line = (
+            f"<strong>Cows (&gt;500kg):</strong> av ${current['cows']:,.0f} ({cow_change})"
+            if current["cows"] is not None
+            else "<strong>Cows (&gt;500kg):</strong> Unavailable"
+        )
         description = (
-            f"<strong>Cows (&gt;500kg):</strong> av ${current['cows']:,.0f} ({cow_change})<br>"
+            cow_line + "<br>"
             f"<strong>Feeder Steers (330-400kg):</strong> av ${current['feeder']:,.0f} ({feeder_change})<br>"
             f"<em>Yarding: {yarding:,} head ({yarding_change})</em>"
         )
 
-        history[sale_key] = {
-            "cows": round(current["cows"], 2),
+        history_entry = {
             "feeder": round(current["feeder"], 2),
             "yarding": yarding,
         }
+        if current["cows"] is not None:
+            history_entry["cows"] = round(current["cows"], 2)
+        history[sale_key] = history_entry
 
         dated_history = {
             key: value
