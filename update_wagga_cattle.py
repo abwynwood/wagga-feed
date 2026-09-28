@@ -323,26 +323,26 @@ def save_history(history):
 
 def comparison_head_arrow(current, previous):
     if current is None or previous is None:
-        return "➡️ 0 head"
+        return "→ 0 head"
 
     change = round(current - previous)
     if change > 0:
-        return f"⬆️ {change:,} head"
+        return f"↑ {change:,} head"
     if change < 0:
-        return f"⬇️ {abs(change):,} head"
-    return "➡️ 0 head"
+        return f"↓ {abs(change):,} head"
+    return "→ 0 head"
 
 
 def comparison_arrow(current, previous):
     if current is None or previous is None:
-        return "➡️ $0/hd"
+        return "→ $0/hd"
 
     change = round(current - previous)
     if change > 0:
-        return f"⬆️ ${change}/hd"
+        return f"↑ ${change}/hd"
     if change < 0:
-        return f"⬇️ ${abs(change)}/hd"
-    return "➡️ $0/hd"
+        return f"↓ ${abs(change)}/hd"
+    return "→ $0/hd"
 
 
 def main():
