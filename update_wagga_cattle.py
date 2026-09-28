@@ -170,6 +170,27 @@ def parse_results_table_rows(rows):
     return records
 
 
+def parse_csv_report_date(csv_text):
+    """Find the sale/report date published with the Forbes results sheet."""
+    rows = list(csv.reader(io.StringIO(csv_text)))
+    for row in rows[:20]:
+        for cell in row:
+            value = clean(cell)
+            m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})\b", value, re.I)
+            if m:
+                try:
+                    return datetime.strptime(f"{m.group(1)} {m.group(2)} {m.group(3)}", "%d %B %Y")
+                except ValueError:
+                    pass
+            m = re.search(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b", value)
+            if m:
+                try:
+                    return datetime.strptime(f"{m.group(1)}/{m.group(2)}/{m.group(3)}", "%d/%m/%Y")
+                except ValueError:
+                    pass
+    return None
+
+
 def fetch_results_csv():
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
@@ -354,7 +375,19 @@ def main():
         if yarding is None:
             raise ValueError("Forbes total yarding not found")
 
-        results = parse_results_table(fetch_results_csv())
+        results_csv = fetch_results_csv()
+        results_date = parse_csv_report_date(results_csv)
+        if report_date is None:
+            raise ValueError("Forbes report date not found on Agora page")
+        if results_date is None:
+            raise ValueError("Forbes results sheet sale date not found; refusing to use unverified data")
+        if results_date.date() != report_date.date():
+            raise ValueError(
+                f"Forbes results sheet is stale: sheet date {results_date:%Y-%m-%d} "
+                f"does not match Agora report date {report_date:%Y-%m-%d}"
+            )
+        print(f"Forbes results date verified: {results_date:%Y-%m-%d}")
+        results = parse_results_table(results_csv)
         current = {
             key: find_target(results, target)
             for key, target in TARGETS.items()
@@ -364,7 +397,7 @@ def main():
         print("Forbes cow candidates:", cow_candidates)
         print("Forbes target rows sample:", results[:20])
 
-        # A sale may legitimately have no fat-score 4 cows. Keep the cattle
+        # A sale may legitimately have no fat-score 3 cows. Keep the cattle
         # feed running and show that cow grade as unavailable until a matching
         # row appears. Feeder steers remain required.
         if current["feeder"] is None:
