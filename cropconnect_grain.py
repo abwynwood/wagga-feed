@@ -295,18 +295,22 @@ def trend_for(target, value, history):
 
     now = datetime.now(timezone.utc)
     entries = history.setdefault(target, [])
-    cutoff = now - timedelta(days=7)
 
-    previous = None
-    for entry in reversed(entries):
+    # Use the 24-hour period centred on the equivalent time 7 days ago
+    # as the historical benchmark. This smooths out hourly price noise
+    # and makes the comparison represent the previous day's market level.
+    window_start = now - timedelta(days=7, hours=12)
+    window_end = now - timedelta(days=6, hours=12)
+
+    previous_prices = []
+    for entry in entries:
         try:
             timestamp = datetime.fromisoformat(entry["timestamp"])
             price = float(entry["price"])
         except (KeyError, TypeError, ValueError):
             continue
-        if timestamp <= cutoff:
-            previous = price
-            break
+        if window_start <= timestamp <= window_end:
+            previous_prices.append(price)
 
     entries.append({"timestamp": now.isoformat(), "price": value})
     history[target] = [
@@ -314,18 +318,20 @@ def trend_for(target, value, history):
         if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()
     ]
 
-    if previous is None:
+    if not previous_prices:
         return "➡️ $0/t"
 
-    change = value - previous
-    if abs(change) < 3:
+    previous_average = sum(previous_prices) / len(previous_prices)
+    change = value - previous_average
+
+    # Ignore small moves so the arrow does not flip with normal intraday noise.
+    if abs(change) < 5:
         return "→ Steady from 7 days ago"
 
     direction = "Firming" if change > 0 else "Softer"
     arrow = "↑" if change > 0 else "↓"
     sign = "+" if change > 0 else ""
     return f"{arrow} {direction} {sign}${change:.2f}/t from 7 days ago"
-
 
 def write_xml(target, output, trend, filename):
     now = datetime.now(timezone.utc)
