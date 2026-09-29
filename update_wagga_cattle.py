@@ -317,14 +317,18 @@ def main():
         )
 
         cow_line = (
-            f"<strong>Cows (&gt;500kg):</strong> av ${current['cows']:,.0f} ({cow_change})"
+            f"<strong>Cows (&gt;500kg):</strong><br>av ${current['cows']:,.0f} ({cow_change})"
             if current["cows"] is not None
-            else "<strong>Cows (&gt;500kg):</strong> Unavailable"
+            else "<strong>Cows (&gt;500kg):</strong><br>Unavailable"
+        )
+        feeder_line = (
+            f"<strong>Feeder Steers (330-400kg):</strong><br>av ${current['feeder']:,.0f} ({feeder_change})"
         )
         description = (
             "<br>" + cow_line + "<br><br>"
-            f"<strong>Feeder Steers (330-400kg):</strong> av ${current['feeder']:,.0f} ({feeder_change})<br><br>"
-            f"<em>Yarding: {yarding:,} head ({yarding_change})</em>"
+            + feeder_line + "<br><br>"
+            f"<em>Yarding: {yarding:,} head</em><br>"
+            f"<em>{yarding_change}</em>"
         )
 
         history_entry = {
