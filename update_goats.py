@@ -199,25 +199,37 @@ def save_history(history):
 
 def trend_for(value, history):
     now = datetime.now(timezone.utc)
-    cutoff = now - timedelta(days=7)
-    previous = None
-    for entry in reversed(history):
+    window_start = now - timedelta(days=7, hours=12)
+    window_end = now - timedelta(days=6, hours=12)
+
+    previous_prices = []
+    for entry in history:
         try:
             timestamp = datetime.fromisoformat(entry["timestamp"])
             price = float(entry["price"])
         except (KeyError, TypeError, ValueError):
             continue
-        if timestamp <= cutoff:
-            previous = price
-            break
+        if window_start <= timestamp <= window_end:
+            previous_prices.append(price)
+
+    previous_average = (
+        sum(previous_prices) / len(previous_prices)
+        if previous_prices
+        else None
+    )
 
     history.append({"timestamp": now.isoformat(), "price": value})
-    history[:] = [entry for entry in history if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()]
+    history[:] = [
+        entry
+        for entry in history
+        if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()
+    ]
 
-    if previous is None:
+    if previous_average is None:
         return "➡️ 0 c/kg"
-    change = round(value - previous, 1)
-    if abs(change) < 0.5:
+
+    change = round(value - previous_average, 1)
+    if abs(change) < 5:
         return "→ Steady from 7 days ago"
     if change > 0:
         return f"↑ Firming +{change:g} c/kg cwt from 7 days ago"
