@@ -56,7 +56,7 @@ def find(pattern, text):
 
 def money_range(low, high):
     low, high = sorted((int(low.replace(",", "")), int(high.replace(",", ""))))
-    return "$%s/hd – $%s/hd" % (f"{low:,}", f"{high:,}")
+    return "$%s – $%s/hd" % (f"{low:,}", f"{high:,}")
 
 def single_money(value):
     return "$%s/hd" % f"{int(value.replace(',', '')):,}"
@@ -345,10 +345,10 @@ def main():
         display = display_table_range(table_results.get(label))
         value = current_values[label]
         change = comparison_arrow(value, previous.get(label)) if value is not None else "➡️ $0/hd"
-        lines.append(f"<br><b>{label}:</b> {display} ({change})")
+        lines.append(f"<br><b>{label}:</b><br>{display} ({change})")
 
     lines.append(
-        "<br><i>Yarding: " + yarding_match.group(1) + " head (" + yarding_change + ")</i>"
+        "<br><i>Yarding: " + yarding_match.group(1) + " head</i><br><i>" + yarding_change + "</i>"
     )
     description = "\\n".join(lines)
 
