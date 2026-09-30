@@ -373,7 +373,7 @@ def update(location, grade, filename):
         if target in fallback:
             matched[target] = fallback[target]
     value = matched.get(target)
-    output = f"${value:.2f}/t" if value is not None else "Unavailable"
+    output = f"${value:.2f}/t" if value is not None else "No bids"
     history = load_history()
     trend = trend_for(target, value, history) if value is not None else ""
     save_history(history)
