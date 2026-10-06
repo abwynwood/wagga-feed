@@ -135,6 +135,28 @@ def fetch_bourke_grid():
                     except Exception:
                         pass
 
+                # Prefer the rendered listing price. Agora's internal JSON can
+                # contain other HSCW price fields that are not the advertised
+                # processor-grid rate (which caused Grid 41 to be read as 880c).
+                visible_matches = []
+                for document in documents:
+                    for title_match in visible_title_pattern.finditer(document):
+                        section = document[title_match.start():title_match.start() + 2500]
+                        price_match = visible_price_pattern.search(section)
+                        if not price_match:
+                            continue
+                        price = float(price_match.group(1))
+                        if not 4.0 <= price <= 9.0:
+                            continue
+                        visible_matches.append((
+                            title_match.group(1).strip(),
+                            title_match.group(2).strip(),
+                            price,
+                        ))
+                if visible_matches:
+                    matches = list(dict.fromkeys(visible_matches))
+                    break
+
                 collect(documents)
                 if matches:
                     break
