@@ -116,14 +116,15 @@ def main():
     today_phase, today_emoji = phase_for_today(observer)
 
     # PyEphem's illuminated fraction is independent of the phase label.
-    # Determine waxing/waning from the Moon's apparent elongation trend.
-    previous = ephem.Moon(observer)
-    previous.compute(observer)
-    observer.date = ephem.Date(ephem.now() - ephem.minute)
-    previous.compute(observer)
-    observer.date = ephem.now()
-    moon.compute(observer)
-    waxing = float(moon.phase) > float(previous.phase)
+    # Determine waxing/waning by comparing the illuminated percentage one day
+    # into the future. This avoids relying on a tiny instantaneous difference.
+    now = ephem.now()
+    future_observer = ephem.Observer()
+    future_observer.lat = LAT
+    future_observer.lon = LON
+    future_observer.date = ephem.Date(now + 1)
+    future_moon = ephem.Moon(future_observer)
+    waxing = float(future_moon.phase) > float(moon.phase)
 
     if today_phase:
         phase = today_phase
