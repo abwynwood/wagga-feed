@@ -88,12 +88,12 @@ def write_xml(moon):
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Moon — {html.escape(LOCATION_NAME)}</title>
+    <title> </title>
     <link>https://github.com/abwynwood/wagga-feed</link>
     <description><![CDATA[{description}]]></description>
     <language>en-au</language>
     <item>
-      <title>Moon — {html.escape(LOCATION_NAME)}</title>
+      <title> </title>
       <link>https://github.com/abwynwood/wagga-feed</link>
       <guid>moon-{LAT}-{LON}</guid>
       <pubDate>{now}</pubDate>
