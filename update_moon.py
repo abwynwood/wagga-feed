@@ -74,7 +74,8 @@ def phase_name(illumination, waxing, today_phase):
 
 def make_description(moon):
     return (
-        '<div style="width:100%;text-align:center;">'
+        '<div style="width:100%;text-align:center;padding-top:24px;">'
+        '<br><br>'
         f'<span style="font-size:56px;">{moon["emoji"]}</span><br>'
         f'<strong style="font-size:24px;">{moon["illumination"]}%</strong> '
         f'<strong style="font-size:20px;">{html.escape(moon["phase"])}</strong>'
