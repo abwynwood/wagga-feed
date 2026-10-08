@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Moon — Wynwood NSW</title>
+    <title> </title>
     <link>https://github.com/abwynwood/wagga-feed</link>
-    <description><![CDATA[<div style="width:100%;text-align:center;"><span style="font-size:56px;">🌘</span><br><strong style="font-size:24px;">8%</strong> <strong style="font-size:20px;">Waning Crescent</strong></div>]]></description>
+    <description><![CDATA[<div style="width:100%;text-align:center;"><span style="font-size:56px;">🌘</span><br><strong style="font-size:24px;">7%</strong> <strong style="font-size:20px;">Waning Crescent</strong></div>]]></description>
     <language>en-au</language>
     <item>
-      <title>Moon — Wynwood NSW</title>
+      <title> </title>
       <link>https://github.com/abwynwood/wagga-feed</link>
       <guid>moon--32.5215-145.9944</guid>
-      <pubDate>Thu, 08 Oct 2026 01:58:02 +0000</pubDate>
-      <description><![CDATA[<div style="width:100%;text-align:center;"><span style="font-size:56px;">🌘</span><br><strong style="font-size:24px;">8%</strong> <strong style="font-size:20px;">Waning Crescent</strong></div>]]></description>
+      <pubDate>Thu, 08 Oct 2026 02:18:09 +0000</pubDate>
+      <description><![CDATA[<div style="width:100%;text-align:center;"><span style="font-size:56px;">🌘</span><br><strong style="font-size:24px;">7%</strong> <strong style="font-size:20px;">Waning Crescent</strong></div>]]></description>
     </item>
   </channel>
 </rss>
