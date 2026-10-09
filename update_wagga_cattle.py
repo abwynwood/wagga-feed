@@ -47,10 +47,16 @@ def clean(value):
 
 
 def get_page():
+    separator = "&" if "?" in SOURCE_URL else "?"
+    fresh_url = f"{SOURCE_URL}{separator}wagga_feed_ts={int(time())}"
     response = requests.get(
-        SOURCE_URL,
+        fresh_url,
         timeout=30,
-        headers={"User-Agent": "wagga-feed/1.0"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
+            "Cache-Control": "no-cache, no-store, max-age=0",
+            "Pragma": "no-cache",
+        },
     )
     response.raise_for_status()
     return BeautifulSoup(response.text, "html.parser")
@@ -107,11 +113,12 @@ def fetch_results_csv():
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
         "Cache-Control": "no-cache, no-store, max-age=0",
+        "Pragma": "no-cache",
     }
     errors = []
     for url in (
-        TABLE_CSV_URL + f"&_={int(time())}",
-        GVIZ_CSV_URL + f"&_={int(time())}",
+        TABLE_CSV_URL + f"&wagga_feed_ts={int(time())}",
+        GVIZ_CSV_URL + f"&wagga_feed_ts={int(time())}",
     ):
         try:
             response = requests.get(url, timeout=30, headers=headers)
@@ -148,14 +155,37 @@ def parse_results_table(csv_text):
                 return i
         return default
 
+    head_column = find_column("head")
+    if head_column is None:
+        raise ValueError("Forbes results table Head column not found")
+
+    # Agora's labels are generic (Min, Avg, Max) and the table can contain
+    # several price groups. The $/head group is the first Min/Avg/Max group
+    # immediately after Head and its Change column; don't assume it is at the
+    # end of the table.
+    price_start = head_column + 2
+    price_labels = {
+        re.sub(r"[^a-z]", "", header[i]): i
+        for i in range(price_start, min(price_start + 3, len(header)))
+    }
+    dollar_avg = price_labels.get("avg") or price_labels.get("average")
+    if (
+        price_labels.get("min") is None
+        or dollar_avg is None
+        or price_labels.get("max") is None
+    ):
+        raise ValueError(
+            "Forbes $/head Min, Avg, Max columns not found after Head/Change: "
+            + repr(header)
+        )
+
     columns = {
         "category": find_column("category - nsw", default=0),
         "range": find_column("range - nsw", default=1),
         "sale_prefix": find_column("sale prefix - nsw", default=2),
         "score": find_column("muscle score - nsw", default=3),
         "score_number": find_column("fat score - nsw", default=4),
-        # Published table ends with Min, Avg, Max.
-        "dollar_avg": len(header) - 2,
+        "dollar_avg": dollar_avg,
     }
 
     records = []
@@ -179,6 +209,9 @@ def parse_results_table(csv_text):
         avg = parse_number(cells[columns["dollar_avg"]])
 
         if not (current_category and current_range and current_prefix and score_number and avg is not None):
+            continue
+
+        if avg <= 0:
             continue
 
         records.append({
@@ -281,6 +314,13 @@ def main():
         if report_date is None:
             raise ValueError("Forbes report date not found on Agora page")
 
+        report_age_days = (datetime.now(timezone.utc).date() - report_date.date()).days
+        if report_age_days < 0 or report_age_days >= 7:
+            raise ValueError(
+                f"Forbes cattle report is stale or future-dated: "
+                f"{report_date.strftime('%d %B %Y')} ({report_age_days} days old)"
+            )
+
         results_csv = fetch_results_csv()
         results = parse_results_table(results_csv)
 
@@ -292,6 +332,8 @@ def main():
         print("Forbes selected cow fat scores:", selected_scores["cows"])
         print("Forbes selected feeder fat scores:", selected_scores["feeder"])
 
+        if current["cows"] is None:
+            raise ValueError("Forbes table values not found: Cows > 520+ > Processor with fat score 2 or 3")
         if current["feeder"] is None:
             raise ValueError("Forbes table values not found: Yearling Steer > 330-400 > Feeder with fat score 2 or 3")
 
