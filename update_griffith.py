@@ -38,10 +38,18 @@ def get_page(url=SOURCE_URL):
         "2PACX-1vQvF3XqMuChUt0hMos5MUUsDqxehGI31xgbT_NGY7JEPBcc_cnfBqdXDYuskLZ6nrr5yOfAP0hm8LYY/"
         "pub?gid=404704508&single=true&output=csv"
     )
+    # Google Sheets can be cached separately from the report page. Bust its
+    # cache too, otherwise the report date and price table can get out of sync.
+    sheet_separator = "&" if "?" in sheet_csv_url else "?"
+    fresh_sheet_url = f"{sheet_csv_url}{sheet_separator}wagga_feed_ts={int(time())}"
     csv_response = requests.get(
-        sheet_csv_url,
+        fresh_sheet_url,
         timeout=30,
-        headers={"User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)"},
+        headers={
+            "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
+            "Cache-Control": "no-cache, no-store, max-age=0",
+            "Pragma": "no-cache",
+        },
     )
     csv_response.raise_for_status()
 
@@ -320,13 +328,39 @@ def main():
         raise RuntimeError("Agora Griffith date/yarding not found")
 
     sale_date = date_match.group(1)
+    normalized_date = re.sub(r"(\d)(st|nd|rd|th)", r"\1", sale_date, flags=re.I)
+    parsed_sale_date = datetime.strptime(normalized_date, "%d %B %Y").date()
+    age_days = (datetime.now(timezone.utc).date() - parsed_sale_date).days
+    # Griffith is a weekly sale. Never republish an old report as if it were
+    # current just because the scheduled job ran successfully.
+    if age_days < 0 or age_days >= 7:
+        raise RuntimeError(
+            f"Agora Griffith report is stale: report date {sale_date} is {age_days} days old"
+        )
+
     previous = load_previous_categories(sale_date)
     table_results = parse_results_table(csv_text)
+    if not table_results or any(table_results.get(spec["label"]) is None for spec in TABLE_CATEGORIES):
+        missing = [
+            spec["label"] for spec in TABLE_CATEGORIES
+            if not table_results or table_results.get(spec["label"]) is None
+        ]
+        raise RuntimeError(
+            "Agora Griffith price table missing required categories: " + ", ".join(missing)
+        )
 
     current_values = {
         spec["label"]: category_value(table_results, spec["label"])
         for spec in TABLE_CATEGORIES
     }
+
+    print(
+        f"Agora Griffith report date={sale_date}; yarding={yarding_match.group(1)}; "
+        + "; ".join(
+            f"{label}=$" + str(table_results[label][0]) + "-$" + str(table_results[label][1])
+            for label in current_values
+        )
+    )
 
     current_yarding = int(yarding_match.group(1).replace(",", ""))
     previous_yarding = previous.get("Yarding")
@@ -371,10 +405,6 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as error:
-        if OUTPUT_FILE.exists():
-            print("Update failed; retaining previous feed:", error)
-        else:
-            raise
+    # Let GitHub Actions fail visibly instead of silently reporting success
+    # while leaving a stale feed on Dakboard.
+    main()
