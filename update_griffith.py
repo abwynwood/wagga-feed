@@ -230,9 +230,9 @@ def parse_results_table(csv_text):
                 return index
         return None
 
-    min_index = header_column([r"\$/headmin", r"\$/hdmin"])
-    max_index = header_column([r"\$/headmax", r"\$/hdmax"])
-    avg_index = header_column([r"\$/head(?:avg|average)", r"\$/hd(?:avg|average)"])
+    min_index = header_column([r"\$headmin", r"\$hdmin"])
+    max_index = header_column([r"\$headmax", r"\$hdmax"])
+    avg_index = header_column([r"\$head(?:avg|average)", r"\$hd(?:avg|average)"])
     head_index = next((i for i, h in enumerate(headers) if h.strip() in ("head", "head count", "no. head")), None)
 
     if min_index is None or max_index is None or avg_index is None:
