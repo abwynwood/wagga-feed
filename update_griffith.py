@@ -223,21 +223,26 @@ def parse_results_table(csv_text):
 
     headers = [clean_cell(x).lower() for x in rows[header_index]]
 
-    def header_column(patterns):
-        for index, header in enumerate(headers):
-            compact = re.sub(r"[^a-z0-9$]", "", header)
-            if any(re.search(pattern, compact, re.I) for pattern in patterns):
-                return index
-        return None
-
-    min_index = header_column([r"\$headmin", r"\$hdmin"])
-    max_index = header_column([r"\$headmax", r"\$hdmax"])
-    avg_index = header_column([r"\$head(?:avg|average)", r"\$hd(?:avg|average)"])
     head_index = next((i for i, h in enumerate(headers) if h.strip() in ("head", "head count", "no. head")), None)
+    if head_index is None:
+        raise RuntimeError("Agora Griffith sheet header did not identify the Head column: " + repr(headers))
+
+    # The sheet's column labels are only "Min", "Avg", "Max" (not "$/head
+    # Min" etc.), and Agora has changed their order between weekly reports.
+    # The $/head group is the first Min/Avg/Max group immediately after Head
+    # and its Change column. Resolve each column by its current label.
+    price_start = head_index + 2
+    price_labels = {
+        re.sub(r"[^a-z]", "", headers[i].lower()): i
+        for i in range(price_start, min(price_start + 3, len(headers)))
+    }
+    min_index = price_labels.get("min")
+    max_index = price_labels.get("max")
+    avg_index = price_labels.get("avg") or price_labels.get("average")
 
     if min_index is None or max_index is None or avg_index is None:
         raise RuntimeError(
-            "Agora Griffith sheet headers did not identify $/head Min, Max and Average columns: "
+            "Agora Griffith sheet could not identify Min, Avg and Max in the $/head group: "
             + repr(headers)
         )
 
