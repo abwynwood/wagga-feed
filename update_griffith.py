@@ -388,12 +388,27 @@ def main():
     if not yarding_match:
         raise RuntimeError(f"Agora Griffith yarding not found for report dated {sale_date}")
     age_days = (datetime.now(timezone.utc).date() - parsed_sale_date).days
-    # Griffith is a weekly sale. Never republish an old report as if it were
-    # current just because the scheduled job ran successfully.
-    if age_days < 0 or age_days >= 7:
+    # Griffith is normally a weekly sale, but a holiday or cancelled sale can
+    # leave the last genuine report published for another week. Keep the
+    # existing feed when no newer sale is available, rather than failing the
+    # whole workflow or rewriting the Dakboard item with old/partial data.
+    if age_days < 0:
         raise RuntimeError(
-            f"Agora Griffith report is stale: report date {sale_date} is {age_days} days old"
+            f"Agora Griffith report is future-dated: report date {sale_date} "
+            f"is {abs(age_days)} days ahead"
         )
+    if age_days > 14:
+        raise RuntimeError(
+            f"Agora Griffith report is too old to trust: report date {sale_date} "
+            f"is {age_days} days old (maximum allowed age is 14 days)"
+        )
+    if age_days >= 7:
+        print(
+            f"No newer Griffith sheep sale is published by Agora. Keeping the "
+            f"existing feed for the {sale_date} sale ({age_days} days old); "
+            "this is not a scraper failure."
+        )
+        return
 
     previous = load_previous_categories(sale_date)
     table_results = parse_results_table(csv_text)
