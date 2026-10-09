@@ -307,23 +307,36 @@ def main():
         page = get_page()
         page_text = get_page_text(page)
         report_date = parse_report_date(page_text)
-        yarding = parse_yarding(page_text)
-        if yarding is None:
-            raise ValueError("Forbes total yarding not found")
-
         if report_date is None:
             raise ValueError("Forbes report date not found on Agora page")
 
         report_age_days = (datetime.now(timezone.utc).date() - report_date.date()).days
-        # Forbes cattle sales are normally weekly, but a public holiday can
-        # shift/cancel the Monday sale (e.g. the 5 October 2026 holiday).
-        # Allow a full fortnight before treating the report as stale.
-        if report_age_days < 0 or report_age_days > 14:
+        # A long weekend or cancelled sale can leave Agora showing the last
+        # genuine sale for more than a week. Keep the existing feed and finish
+        # successfully when no newer sale is published, instead of treating
+        # that expected gap as a scraper failure.
+        if report_age_days < 0:
             raise ValueError(
-                f"Forbes cattle report is stale or future-dated: "
+                f"Forbes cattle report is future-dated: "
+                f"{report_date.strftime('%d %B %Y')} ({report_age_days} days from today)"
+            )
+        if report_age_days > 14:
+            raise ValueError(
+                f"Forbes cattle report is too old to trust: "
                 f"{report_date.strftime('%d %B %Y')} ({report_age_days} days old; "
                 f"maximum allowed age is 14 days)"
             )
+        if report_age_days > 7:
+            print(
+                f"No newer Forbes cattle sale is published by Agora. "
+                f"Keeping the existing feed for the {report_date.strftime('%d %B %Y')} sale "
+                f"({report_age_days} days old); this is not a scraper failure."
+            )
+            return
+
+        yarding = parse_yarding(page_text)
+        if yarding is None:
+            raise ValueError("Forbes total yarding not found")
 
         results_csv = fetch_results_csv()
         results = parse_results_table(results_csv)
