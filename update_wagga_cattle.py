@@ -315,10 +315,14 @@ def main():
             raise ValueError("Forbes report date not found on Agora page")
 
         report_age_days = (datetime.now(timezone.utc).date() - report_date.date()).days
-        if report_age_days < 0 or report_age_days >= 7:
+        # Forbes cattle sales are normally weekly, but a public holiday can
+        # shift/cancel the Monday sale (e.g. the 5 October 2026 holiday).
+        # Allow a full fortnight before treating the report as stale.
+        if report_age_days < 0 or report_age_days > 14:
             raise ValueError(
                 f"Forbes cattle report is stale or future-dated: "
-                f"{report_date.strftime('%d %B %Y')} ({report_age_days} days old)"
+                f"{report_date.strftime('%d %B %Y')} ({report_age_days} days old; "
+                f"maximum allowed age is 14 days)"
             )
 
         results_csv = fetch_results_csv()
