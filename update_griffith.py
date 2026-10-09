@@ -322,14 +322,40 @@ def yarding_comparison(current, previous):
 
 def main():
     soup, text, csv_text = get_page()
-    date_match = find(r"Report Date:\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})", text)
-    yarding_match = find(r"Total Yarding:\s*([\d,]+)", text)
-    if not date_match or not yarding_match:
-        raise RuntimeError("Agora Griffith date/yarding not found")
+    # The page can contain multiple embedded report blocks. A first-match
+    # search can accidentally select last week's report; select the newest
+    # dated report and read its yarding from that same block.
+    date_pattern = re.compile(
+        r"Report Date:\s*(\d{1,2}(?:st|nd|rd|th)?\s+[A-Za-z]+\s+\d{4})",
+        re.I,
+    )
+    date_matches = list(date_pattern.finditer(text))
+    if not date_matches:
+        raise RuntimeError("Agora Griffith report date not found")
 
+    dated_reports = []
+    for match in date_matches:
+        normalized = re.sub(r"(\d)(st|nd|rd|th)", r"\1", match.group(1), flags=re.I)
+        try:
+            parsed = datetime.strptime(normalized, "%d %B %Y").date()
+        except ValueError:
+            continue
+        dated_reports.append((parsed, match))
+
+    if not dated_reports:
+        raise RuntimeError("Agora Griffith report dates could not be parsed")
+
+    parsed_sale_date, date_match = max(dated_reports, key=lambda item: item[0])
     sale_date = date_match.group(1)
-    normalized_date = re.sub(r"(\d)(st|nd|rd|th)", r"\1", sale_date, flags=re.I)
-    parsed_sale_date = datetime.strptime(normalized_date, "%d %B %Y").date()
+    next_date = date_pattern.search(text, date_match.end())
+    report_section = text[date_match.end():next_date.start() if next_date else len(text)]
+    yarding_match = find(r"Total Yarding:\s*([\d,]+)", report_section)
+    if not yarding_match:
+        # Some page layouts put the yarding just before the date heading.
+        start = max(0, date_match.start() - 500)
+        yarding_match = find(r"Total Yarding:\s*([\d,]+)", text[start:date_match.start()])
+    if not yarding_match:
+        raise RuntimeError(f"Agora Griffith yarding not found for report dated {sale_date}")
     age_days = (datetime.now(timezone.utc).date() - parsed_sale_date).days
     # Griffith is a weekly sale. Never republish an old report as if it were
     # current just because the scheduled job ran successfully.
