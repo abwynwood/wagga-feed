@@ -30,6 +30,8 @@ jobs:
         python -m playwright install --with-deps chromium
 
     - name: Update Griffith Sheep Report
+      id: griffith
+      continue-on-error: true
       run: python update_griffith.py
 
     - name: Update Hillston APW1 (CropConnect)
@@ -61,3 +63,9 @@ jobs:
         git fetch origin main
         git rebase -X theirs origin/main
         git push origin HEAD:main
+
+    - name: Report Griffith scraper failure
+      if: steps.griffith.outcome == 'failure'
+      run: |
+        echo "::error::Griffith scraper failed; the old sheep feed was retained. Check the Update Griffith Sheep Report logs."
+        exit 1
