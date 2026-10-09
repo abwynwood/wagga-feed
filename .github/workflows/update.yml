@@ -50,6 +50,8 @@ jobs:
       run: python update_goats.py
 
     - name: Update Forbes Cattle Averages
+      id: cattle
+      continue-on-error: true
       run: python update_wagga_cattle.py
 
     - name: Commit and push changes
@@ -68,4 +70,10 @@ jobs:
       if: steps.griffith.outcome == 'failure'
       run: |
         echo "::error::Griffith scraper failed; the old sheep feed was retained. Check the Update Griffith Sheep Report logs."
+        exit 1
+
+    - name: Report Forbes cattle scraper failure
+      if: steps.cattle.outcome == 'failure'
+      run: |
+        echo "::error::Forbes cattle scraper failed; the old cattle feed was retained. Check the Update Forbes Cattle Averages logs."
         exit 1
