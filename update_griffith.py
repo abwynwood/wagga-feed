@@ -203,12 +203,10 @@ def parse_results_table(csv_text):
     """
     Read the published Griffith results Google Sheet as CSV.
 
-    The sheet has stable columns:
-    Category, Sale Prefix, Weight Range, Score, Head, Change,
-    $/head Min, $/head Avg, $/head Max, Change, Carcass Min, Avg.
-
-    Blank category/prefix cells inherit the preceding value, matching the
-    way the table is displayed.
+    Locate the $/head Min, Max and Average columns by their header labels,
+    rather than fixed positions: Agora can rearrange these columns between
+    weekly reports. Comparisons use the Average column; displayed ranges use
+    Min and Max. Blank category/prefix cells inherit the preceding value.
     """
     rows = list(csv.reader(io.StringIO(csv_text)))
     records = []
@@ -223,12 +221,32 @@ def parse_results_table(csv_text):
     if header_index is None:
         return {}
 
+    headers = [clean_cell(x).lower() for x in rows[header_index]]
+
+    def header_column(patterns):
+        for index, header in enumerate(headers):
+            compact = re.sub(r"[^a-z0-9$]", "", header)
+            if any(re.search(pattern, compact, re.I) for pattern in patterns):
+                return index
+        return None
+
+    min_index = header_column([r"\$/headmin", r"\$/hdmin"])
+    max_index = header_column([r"\$/headmax", r"\$/hdmax"])
+    avg_index = header_column([r"\$/head(?:avg|average)", r"\$/hd(?:avg|average)"])
+    head_index = next((i for i, h in enumerate(headers) if h.strip() in ("head", "head count", "no. head")), None)
+
+    if min_index is None or max_index is None or avg_index is None:
+        raise RuntimeError(
+            "Agora Griffith sheet headers did not identify $/head Min, Max and Average columns: "
+            + repr(headers)
+        )
+
     current_category = ""
     current_prefix = ""
 
     for row in rows[header_index + 1:]:
         cells = [clean_cell(x) for x in row]
-        if len(cells) < 9:
+        if len(cells) <= max(min_index, max_index, avg_index):
             continue
 
         category = cells[0] or current_category
@@ -241,24 +259,29 @@ def parse_results_table(csv_text):
         if not current_category or not current_prefix:
             continue
 
-        min_price = re.sub(r"[^0-9]", "", cells[6])
-        max_price = re.sub(r"[^0-9]", "", cells[8])
-        if not min_price or not max_price:
+        def numeric_cell(index):
+            raw = re.sub(r"[^0-9.]", "", cells[index])
+            return float(raw) if raw else None
+
+        min_price = numeric_cell(min_index)
+        max_price = numeric_cell(max_index)
+        avg_price = numeric_cell(avg_index)
+        if min_price is None or max_price is None or avg_price is None:
             continue
 
         low_weight, high_weight = weight_bounds(cells[2])
+        head_count = numeric_cell(head_index) if head_index is not None and len(cells) > head_index else None
 
-        try:
-            records.append({
-                "category": current_category,
-                "sale_prefix": current_prefix,
-                "weight_low": low_weight,
-                "weight_high": high_weight,
-                "price_min": int(min_price),
-                "price_max": int(max_price),
-            })
-        except ValueError:
-            continue
+        records.append({
+            "category": current_category,
+            "sale_prefix": current_prefix,
+            "weight_low": low_weight,
+            "weight_high": high_weight,
+            "price_min": int(min_price),
+            "price_max": int(max_price),
+            "price_avg": avg_price,
+            "head_count": head_count,
+        })
 
     results = {}
     for spec in TABLE_CATEGORIES:
@@ -282,27 +305,30 @@ def parse_results_table(csv_text):
             selected.append(record)
 
         if selected:
-            results[spec["label"]] = (
-                min(r["price_min"] for r in selected),
-                max(r["price_max"] for r in selected),
-            )
+            min_price = min(r["price_min"] for r in selected)
+            max_price = max(r["price_max"] for r in selected)
+            weighted = [r for r in selected if r["head_count"] is not None and r["head_count"] > 0]
+            if weighted:
+                average = sum(r["price_avg"] * r["head_count"] for r in weighted) / sum(r["head_count"] for r in weighted)
+            else:
+                average = sum(r["price_avg"] for r in selected) / len(selected)
+            results[spec["label"]] = (min_price, max_price, average)
         else:
             results[spec["label"]] = None
 
     return results
 
-
 def display_table_range(value_range):
     if value_range is None:
         return "Not reported"
-    low, high = value_range
+    low, high = value_range[0], value_range[1]
     return single_money(str(low)) if low == high else money_range(str(low), str(high))
 
 
 def table_category_value(value_range):
     if value_range is None:
         return None
-    return (value_range[0] + value_range[1]) / 2
+    return value_range[2]
 
 
 def category_value(table_results, label):
@@ -383,7 +409,7 @@ def main():
     print(
         f"Agora Griffith report date={sale_date}; yarding={yarding_match.group(1)}; "
         + "; ".join(
-            f"{label}=$" + str(table_results[label][0]) + "-$" + str(table_results[label][1])
+            f"{label}=$" + str(table_results[label][0]) + "-$" + str(table_results[label][1]) + "; avg=$" + f"{table_results[label][2]:.2f}"
             for label in current_values
         )
     )
