@@ -3,14 +3,14 @@
   <channel>
     <title> </title>
     <link>https://github.com/abwynwood/wagga-feed</link>
-    <description><![CDATA[<div style="width:100%;text-align:center;padding-top:24px;"><br><br><span style="font-size:56px;">🌒</span><br><span style="font-size:24px;">0%</span> <span style="font-size:20px;">Waxing Crescent</span></div>]]></description>
+    <description><![CDATA[<div style="width:100%;text-align:center;padding-top:24px;"><br><br><span style="font-size:56px;">🌑</span><br><span style="font-size:24px;">0%</span> <span style="font-size:20px;">New Moon</span></div>]]></description>
     <language>en-au</language>
     <item>
       <title> </title>
       <link>https://github.com/abwynwood/wagga-feed</link>
       <guid>moon--32.5215-145.9944</guid>
-      <pubDate>Sat, 10 Oct 2026 08:32:00 +0000</pubDate>
-      <description><![CDATA[<div style="width:100%;text-align:center;padding-top:24px;"><br><br><span style="font-size:56px;">🌒</span><br><span style="font-size:24px;">0%</span> <span style="font-size:20px;">Waxing Crescent</span></div>]]></description>
+      <pubDate>Sat, 10 Oct 2026 13:04:17 +0000</pubDate>
+      <description><![CDATA[<div style="width:100%;text-align:center;padding-top:24px;"><br><br><span style="font-size:56px;">🌑</span><br><span style="font-size:24px;">0%</span> <span style="font-size:20px;">New Moon</span></div>]]></description>
     </item>
   </channel>
 </rss>
