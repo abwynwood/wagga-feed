@@ -159,15 +159,41 @@ def parse_results_table(csv_text):
     if head_column is None:
         raise ValueError("Forbes results table Head column not found")
 
-    # Agora's labels are generic (Min, Avg, Max) and the table can contain
-    # several price groups. The $/head group is the first Min/Avg/Max group
-    # immediately after Head and its Change column; don't assume it is at the
-    # end of the table.
-    price_start = head_column + 2
-    price_labels = {
-        re.sub(r"[^a-z]", "", header[i]): i
-        for i in range(price_start, min(price_start + 3, len(header)))
-    }
+    # Forbes has three separate price groups (Liveweight c/kg,
+    # Carcass weight c/kg, and $/head). Each group uses generic Min/Max/Avg
+    # subheaders, so identify the $/head group label first instead of assuming
+    # the first Min/Max/Avg columns are dollar-per-head prices.
+    group_row_index = None
+    dollar_group_start = None
+    for row_index in range(header_index, max(-1, header_index - 4), -1):
+        for col_index, cell in enumerate(rows[row_index]):
+            normalized = re.sub(r"\\s+", "", clean(cell)).casefold()
+            if "$/head" in normalized or "$perhead" in normalized or "dollar/head" in normalized:
+                group_row_index = row_index
+                dollar_group_start = col_index
+                break
+        if dollar_group_start is not None:
+            break
+
+    if dollar_group_start is None:
+        raise ValueError("Forbes $/head price group heading not found")
+
+    # If another named price group follows the $/head heading, stop at it;
+    # otherwise the $/head group extends to the end of the header.
+    group_row = [clean(cell).casefold() for cell in rows[group_row_index]]
+    dollar_group_end = len(header)
+    for col_index in range(dollar_group_start + 1, len(group_row)):
+        label = group_row[col_index]
+        if label and any(term in label for term in ("liveweight", "carcass", "$/head", "$ per head", "dollar/head")):
+            dollar_group_end = col_index
+            break
+
+    price_labels = {}
+    for i in range(dollar_group_start, min(dollar_group_end, len(header))):
+        label = re.sub(r"[^a-z]", "", header[i])
+        if label in {"min", "max", "avg", "average"}:
+            price_labels[label] = i
+
     dollar_avg = price_labels.get("avg") or price_labels.get("average")
     if (
         price_labels.get("min") is None
@@ -175,9 +201,14 @@ def parse_results_table(csv_text):
         or price_labels.get("max") is None
     ):
         raise ValueError(
-            "Forbes $/head Min, Avg, Max columns not found after Head/Change: "
-            + repr(header)
+            "Forbes $/head Min, Max, Avg columns not found in the identified "
+            "price group: "
+            + repr({"group_row": group_row, "subheaders": header, "start": dollar_group_start, "end": dollar_group_end})
         )
+    print(
+        "Forbes using $/head columns:",
+        {"min": price_labels["min"], "max": price_labels["max"], "avg": dollar_avg},
+    )
 
     columns = {
         "category": find_column("category - nsw", default=0),
