@@ -167,7 +167,7 @@ def parse_results_table(csv_text):
     dollar_group_start = None
     for row_index in range(header_index, max(-1, header_index - 4), -1):
         for col_index, cell in enumerate(rows[row_index]):
-            normalized = re.sub(r"\\s+", "", clean(cell)).casefold()
+            normalized = re.sub(r"\s+", "", clean(cell)).casefold()
             if "$/head" in normalized or "$perhead" in normalized or "dollar/head" in normalized:
                 group_row_index = row_index
                 dollar_group_start = col_index
