@@ -109,12 +109,26 @@ def market_direction(text):
         return "SOFTER"
     return "STEADY"
 
+def parse_history_date(value):
+    """Parse Agora's human-readable sale dates as real calendar dates."""
+    normalized = re.sub(r"(\d)(st|nd|rd|th)", r"\1", value.strip(), flags=re.I)
+    return datetime.strptime(normalized, "%d %B %Y").date()
+
 def load_previous_categories(current_date):
     try:
         history = json.loads(HISTORY_FILE.read_text(encoding="utf-8")) if HISTORY_FILE.exists() else {}
-        dates = sorted((date for date in history if date < current_date), reverse=True)
-        return history.get(dates[0], {}) if dates else {}
-    except Exception:
+        current = parse_history_date(current_date)
+        dated_history = []
+        for date_text, values in history.items():
+            try:
+                parsed = parse_history_date(date_text)
+            except (ValueError, TypeError):
+                continue
+            if parsed < current:
+                dated_history.append((parsed, values))
+        return max(dated_history, key=lambda item: item[0])[1] if dated_history else {}
+    except Exception as exc:
+        print(f"Could not load previous Griffith history: {exc}")
         return {}
 
 def save_category_history(sale_date, values):
@@ -123,7 +137,13 @@ def save_category_history(sale_date, values):
     except Exception:
         history = {}
     history[sale_date] = {k: v for k, v in values.items() if v is not None}
-    keep = sorted(history)[-20:]
+    dated_history = []
+    for date_text in history:
+        try:
+            dated_history.append((parse_history_date(date_text), date_text))
+        except (ValueError, TypeError):
+            continue
+    keep = [date_text for _, date_text in sorted(dated_history)[-20:]]
     HISTORY_FILE.write_text(json.dumps({k: history[k] for k in keep}, indent=2), encoding="utf-8")
 
 def comparison_arrow(current, previous):
