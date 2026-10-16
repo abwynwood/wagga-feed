@@ -1,10 +1,4 @@
 {
-  "16th October 2026": {
-    "Dorper Ewes": 269.3732394366197,
-    "Dorper Hoggets": 301.59574468085106,
-    "Dorper Lambs 20-26kg": 290.4299065420561,
-    "Yarding": 12950
-  },
   "18th September 2026": {
     "Heavy Lambs": 325,
     "Mutton/Ewes": 329,
@@ -27,5 +21,11 @@
     "Dorper Hoggets": 320.6753246753247,
     "Dorper Lambs 20-26kg": 274.7567567567568,
     "Yarding": 14900
+  },
+  "16th October 2026": {
+    "Dorper Ewes": 269.3732394366197,
+    "Dorper Hoggets": 301.59574468085106,
+    "Dorper Lambs 20-26kg": 290.4299065420561,
+    "Yarding": 12950
   }
 }
