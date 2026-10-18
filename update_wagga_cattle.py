@@ -6,7 +6,8 @@ import json
 from datetime import datetime, timezone
 from email.utils import formatdate
 from pathlib import Path
-from time import time
+from time import sleep, time
+from zoneinfo import ZoneInfo
 
 import requests
 from bs4 import BeautifulSoup
@@ -48,18 +49,34 @@ def clean(value):
 
 def get_page():
     separator = "&" if "?" in SOURCE_URL else "?"
-    fresh_url = f"{SOURCE_URL}{separator}wagga_feed_ts={int(time())}"
-    response = requests.get(
-        fresh_url,
-        timeout=30,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
-            "Cache-Control": "no-cache, no-store, max-age=0",
-            "Pragma": "no-cache",
-        },
-    )
-    response.raise_for_status()
-    return BeautifulSoup(response.text, "html.parser")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
+        "Cache-Control": "no-cache, no-store, max-age=0",
+        "Pragma": "no-cache",
+    }
+
+    # Agora can briefly return gateway errors. Retry before treating the
+    # source as unavailable.
+    for attempt in range(1, 4):
+        fresh_url = f"{SOURCE_URL}{separator}wagga_feed_ts={int(time())}"
+        try:
+            response = requests.get(fresh_url, timeout=30, headers=headers)
+            if response.status_code in {429, 500, 502, 503, 504} and attempt < 3:
+                print(
+                    f"Forbes Agora returned HTTP {response.status_code}; "
+                    f"retrying ({attempt}/3)..."
+                )
+                sleep(2 * attempt)
+                continue
+            response.raise_for_status()
+            return BeautifulSoup(response.text, "html.parser")
+        except requests.RequestException as error:
+            if attempt >= 3:
+                raise
+            print(f"Forbes Agora request failed ({attempt}/3): {error}; retrying...")
+            sleep(2 * attempt)
+
+    raise RuntimeError("Forbes Agora page could not be fetched after 3 attempts")
 
 
 def get_page_text(soup):
@@ -335,7 +352,22 @@ def comparison_arrow(current, previous):
 
 def main():
     try:
-        page = get_page()
+        try:
+            page = get_page()
+        except requests.RequestException:
+            # Forbes cattle sale is on Monday. If Agora is unavailable on
+            # Sunday, that is before the next sale: retain the current feed
+            # and finish successfully rather than flagging a false failure.
+            local_now = datetime.now(ZoneInfo("Australia/Sydney"))
+            if local_now.weekday() == 6:
+                print(
+                    "Forbes Agora is unavailable on Sunday, before the Monday "
+                    "cattle sale. Keeping the existing cattle feed; no sale "
+                    "update is expected yet."
+                )
+                return
+            raise
+
         page_text = get_page_text(page)
         report_date = parse_report_date(page_text)
         if report_date is None:
