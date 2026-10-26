@@ -272,6 +272,17 @@ def parse_results_table(csv_text):
         })
 
     print("Forbes parsed records:", len(records))
+    # Log the exact selected rows and source values so a changed Agora/Sheets
+    # column layout is immediately visible in Actions rather than silently
+    # producing a plausible but incorrect average.
+    for row in records:
+        if (
+            clean(row["category"]).casefold() == "cows"
+            and clean(row["range"]).replace(" ", "").casefold() == "520+"
+            and normalise_sale_prefix(row["sale_prefix"]) == "pr"
+            and clean(row["score_number"]).replace(".0", "") in {"2", "3", "4"}
+        ):
+            print("Forbes cow source row:", row)
     return records
 
 
