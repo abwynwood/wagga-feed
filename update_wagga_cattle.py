@@ -248,12 +248,10 @@ def parse_results_table(csv_text):
 
     for i, row in enumerate(rows):
         joined = " | ".join(clean(cell) for cell in row).casefold()
-        if (
-            any(clean(cell).casefold().startswith("category") for cell in row)
-            and any(clean(cell).casefold().startswith("range") for cell in row)
-            and any(clean(cell).casefold().startswith("sale prefix") for cell in row)
-            and any(clean(cell).casefold().startswith("fat score") for cell in row)
-        ):
+        # Header text varies between Agora's live HTML and its CSV export.
+        # Match the required labels anywhere in the row, not only at the start
+        # of individual cells (HTML sort labels/icons can be appended).
+        if all(term in joined for term in ("category", "range", "sale prefix", "fat score")):
             header_index = i
             break
 
