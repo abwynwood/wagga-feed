@@ -151,6 +151,12 @@ def fetch_results_csv():
             "2521": "2,521" in raw_html,
             "page_bytes": len(raw_html),
         })
+        # Show the actual source context for the live values, so the parser
+        # can use the page's real embedded data rather than the stale CSV.
+        for marker in ("2,366", "2,657"):
+            pos = raw_html.find(marker)
+            if pos >= 0:
+                print(f"Forbes live HTML context {marker}:", raw_html[max(0, pos-700):pos+700])
     except Exception as error:
         print("Forbes could not inspect embedded table URLs:", error)
 
