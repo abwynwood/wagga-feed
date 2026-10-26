@@ -205,35 +205,38 @@ def parse_results_table(csv_text):
             dollar_group_end = col_index
             break
 
-    # The published CSV places the merged "$/head" group label one column
-    # before its actual Min/Max/Avg values (the preceding Change column is
-    # included in the merged-heading alignment). Locate the first real
-    # consecutive Min, Max, Avg trio AFTER that marker, not the nearest
-    # generic labels that can belong to the preceding Change/group boundary.
+    # Keep the discovered Min/Max/Avg labels in their actual CSV positions.
+    # The header labels are generic across price groups, so print the relevant
+    # raw headers and target rows for diagnosis if Agora changes its layout.
     price_labels = {}
-    trio = None
-    for i in range(dollar_group_start + 1, min(dollar_group_end, len(header)) - 2):
-        labels = [
-            re.sub(r"[^a-z]", "", header[j])
-            for j in (i, i + 1, i + 2)
-        ]
-        if labels[0] == "min" and labels[1] == "max" and labels[2] in {"avg", "average"}:
-            trio = (i, i + 1, i + 2)
-            break
+    for i in range(dollar_group_start, min(dollar_group_end, len(header))):
+        label = re.sub(r"[^a-z]", "", header[i])
+        if label in {"min", "max", "avg", "average"}:
+            price_labels[label] = i
 
-    if trio is None:
+    dollar_avg = price_labels.get("avg") or price_labels.get("average")
+    if (
+        price_labels.get("min") is None
+        or dollar_avg is None
+        or price_labels.get("max") is None
+    ):
         raise ValueError(
-            "Forbes consecutive $/head Min, Max, Avg columns not found after "
-            "the group heading: "
+            "Forbes $/head Min, Max, Avg columns not found in the identified "
+            "price group: "
             + repr({"group_row": group_row, "subheaders": header, "start": dollar_group_start, "end": dollar_group_end})
         )
-
-    price_labels = {"min": trio[0], "max": trio[1], "avg": trio[2]}
-    dollar_avg = price_labels["avg"]
     print(
         "Forbes using $/head columns:",
         {"min": price_labels["min"], "max": price_labels["max"], "avg": dollar_avg},
     )
+
+    print("Forbes $/head header diagnostics:", {
+        "group_row_index": group_row_index,
+        "group_row": group_row,
+        "header_index": header_index,
+        "price_labels": price_labels,
+        "header_cells": [(i, cell) for i, cell in enumerate(header) if i >= max(0, dollar_group_start - 3) and i < min(len(header), dollar_group_start + 8)],
+    })
 
     columns = {
         "category": find_column("category - nsw", default=0),
@@ -259,6 +262,19 @@ def parse_results_table(csv_text):
             current_range = cells[columns["range"]]
         if cells[columns["sale_prefix"]]:
             current_prefix = cells[columns["sale_prefix"]]
+
+        if (
+            current_category.casefold() == "cows"
+            and current_range.replace(" ", "").casefold() == "520+"
+            and normalise_sale_prefix(current_prefix) == "pr"
+            and clean(cells[columns["score_number"]]).replace(".0", "") in {"2", "3", "4"}
+        ):
+            print("Forbes cow raw CSV row:", {
+                "score_number": cells[columns["score_number"]],
+                "cells_near_dollar_group": [(i, cells[i]) for i in range(max(0, dollar_group_start - 3), min(len(cells), dollar_group_start + 8))],
+                "selected_avg_index": dollar_avg,
+                "selected_avg_value": cells[dollar_avg],
+            })
 
         score = cells[columns["score"]]
         score_number = cells[columns["score_number"]]
