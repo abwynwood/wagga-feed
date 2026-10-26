@@ -159,6 +159,39 @@ def fetch_results_csv():
         "Cache-Control": "no-cache, no-store, max-age=0",
         "Pragma": "no-cache",
     }
+
+    # Agora's visible table is embedded from the published HTML worksheet.
+    # Prefer that exact table over the separate CSV export, which can lag
+    # behind the values shown in the browser.
+    html_url = (
+        "https://docs.google.com/spreadsheets/d/e/"
+        "2PACX-1vTJCYUTqmjXBC_SfhIIE-dzxih0HwuiTjLqIats2wurbtEmW8zs-6DiNtBxqTs_HQvkps6Pey63q4kV/"
+        "pubhtml?chrome=false&gid=161375687&headers=false&single=true&widget=true"
+    )
+    try:
+        response = requests.get(html_url, timeout=30, headers=headers)
+        response.raise_for_status()
+        sheet = BeautifulSoup(response.text, "html.parser")
+        for table in sheet.find_all("table"):
+            table_rows = []
+            for tr in table.find_all("tr"):
+                cells = [
+                    clean(cell.get_text(" ", strip=True))
+                    for cell in tr.find_all(["th", "td"], recursive=False)
+                ]
+                if cells:
+                    table_rows.append(cells)
+            joined = " ".join(cell for row in table_rows for cell in row).casefold()
+            if "category - nsw" in joined and "range - nsw" in joined:
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerows(table_rows)
+                print(f"Forbes results loaded from embedded HTML sheet: {len(table_rows)} rows")
+                return output.getvalue()
+        print("Forbes embedded HTML sheet did not contain the expected table; falling back to CSV")
+    except Exception as error:
+        print("Forbes embedded HTML sheet unavailable; falling back to CSV:", error)
+
     errors = []
     for url in (
         TABLE_CSV_URL + f"&wagga_feed_ts={int(time())}",
