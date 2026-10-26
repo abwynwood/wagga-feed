@@ -151,6 +151,34 @@ def fetch_results_csv():
             "2521": "2,521" in raw_html,
             "page_bytes": len(raw_html),
         })
+
+        # The actual Agora page HTML contains the live table. Read that table
+        # directly before trying the separate Google Sheets export, which can
+        # lag behind the figures visible on Agora.
+        for table in page.find_all("table"):
+            table_rows = []
+            for tr in table.find_all("tr"):
+                cells = [
+                    clean(cell.get_text(" ", strip=True))
+                    for cell in tr.find_all(["th", "td"], recursive=False)
+                ]
+                if cells:
+                    table_rows.append(cells)
+            joined = " | ".join(cell for row in table_rows for cell in row).casefold()
+            has_targets = any(
+                len(row) > 16
+                and "cows" in " ".join(row).casefold()
+                and any(cell.strip() == "520+" for cell in row)
+                and any("processor" in cell.casefold() for cell in row)
+                for row in table_rows
+            )
+            if has_targets and ("category - nsw" in joined or "fat score - nsw" in joined):
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerows(table_rows)
+                print(f"Forbes results loaded from live Agora HTML table: {len(table_rows)} rows")
+                return output.getvalue()
+
         # Show the actual source context for the live values, so the parser
         # can use the page's real embedded data rather than the stale CSV.
         for marker in ("2,366", "2,657"):
@@ -509,19 +537,6 @@ def main():
         selected_scores = {}
         for key, target in TARGETS.items():
             current[key], selected_scores[key] = find_target_values(results, target)
-
-        # Agora's published CSV export is behind the live table for the
-        # 26 October 2026 sale. The live table values were verified from the
-        # screenshots supplied for this report: FS2 Avg $2,366 and FS3 Avg
-        # $2,657. Apply this dated correction only to that sale; FS4 is never
-        # included in the cow average.
-        if report_date.date().isoformat() == "2026-10-26":
-            current["cows"] = (2366 + 2657) / 2
-            selected_scores["cows"] = {"2": 2366.0, "3": 2657.0}
-            print(
-                "Forbes cow values corrected from verified live-table figures "
-                "for 2026-10-26: FS2=$2,366, FS3=$2,657; average=$2,511.50"
-            )
 
         print("Forbes selected cow fat scores:", selected_scores["cows"])
         print("Forbes selected feeder fat scores:", selected_scores["feeder"])
