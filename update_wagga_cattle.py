@@ -165,14 +165,15 @@ def fetch_results_csv():
                 if cells:
                     table_rows.append(cells)
             joined = " | ".join(cell for row in table_rows for cell in row).casefold()
-            has_targets = any(
-                len(row) > 16
-                and "cows" in " ".join(row).casefold()
-                and any(cell.strip() == "520+" for cell in row)
-                and any("processor" in cell.casefold() for cell in row)
-                for row in table_rows
+            # Agora's HTML table uses rowspans for Category/Range/Sale
+            # Prefix, so the Cows/520+/Processor labels may not all repeat on
+            # the individual fat-score rows. The live $/head averages are the
+            # strongest indicator that this is the current table.
+            has_live_prices = any(
+                "2,366" in cell or "2,657" in cell
+                for row in table_rows for cell in row
             )
-            if has_targets and "category" in joined and "range" in joined and "sale prefix" in joined and "fat score" in joined and "$/head" in joined:
+            if has_live_prices and "category" in joined and "range" in joined and "sale prefix" in joined and "fat score" in joined:
                 output = io.StringIO()
                 writer = csv.writer(output)
                 writer.writerows(table_rows)
