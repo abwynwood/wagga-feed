@@ -58,16 +58,17 @@ def phase_for_today(observer):
 
 def phase_name(illumination, waxing, today_phase):
     # Principal phase names are reserved for the actual local calendar date
-    # containing the astronomical event. This keeps Full/New Moon to one
-    # night while still showing the true illumination percentage.
+    # containing the astronomical event. Keep rounded 100%/0% values aligned
+    # with their labels so the display never says "100% Waning Gibbous".
     if today_phase:
         return today_phase
-
-    if illumination < 1:
+    if illumination >= 100:
+        return "Full Moon"
+    if illumination <= 0:
         return "New Moon"
     if illumination < 50:
         return "Waxing Crescent" if waxing else "Waning Crescent"
-    if illumination < 51:
+    if illumination == 50:
         return "First Quarter" if waxing else "Last Quarter"
     return "Waxing Gibbous" if waxing else "Waning Gibbous"
 
@@ -116,9 +117,8 @@ def main():
     illumination = round(float(moon.phase))
     today_phase, today_emoji = phase_for_today(observer)
 
-    # PyEphem's illuminated fraction is independent of the phase label.
-    # Determine waxing/waning by comparing the illuminated percentage one day
-    # into the future. This avoids relying on a tiny instantaneous difference.
+    # Determine waxing/waning by comparing illumination one day into the
+    # future, rather than relying on a tiny instantaneous difference.
     now = ephem.now()
     future_observer = ephem.Observer()
     future_observer.lat = LAT
@@ -127,20 +127,27 @@ def main():
     future_moon = ephem.Moon(future_observer)
     waxing = float(future_moon.phase) > float(moon.phase)
 
-    if today_phase:
-        phase = today_phase
-        emoji = today_emoji
-    elif illumination < 50:
-        phase = "Waxing Crescent" if waxing else "Waning Crescent"
-        emoji = "🌒" if waxing else "🌘"
+    phase = phase_name(illumination, waxing, today_phase)
+    if phase == "New Moon":
+        emoji = "🌑"
+    elif phase == "Full Moon":
+        emoji = "🌕"
+    elif phase == "First Quarter":
+        emoji = "🌓"
+    elif phase == "Last Quarter":
+        emoji = "🌗"
+    elif phase == "Waxing Crescent":
+        emoji = "🌒"
+    elif phase == "Waning Crescent":
+        emoji = "🌘"
+    elif phase == "Waxing Gibbous":
+        emoji = "🌔"
     else:
-        phase = "Waxing Gibbous" if waxing else "Waning Gibbous"
-        emoji = "🌔" if waxing else "🌖"
+        emoji = "🌖"
 
     result = {"illumination": illumination, "phase": phase, "emoji": emoji}
     write_xml(result)
     print(f'{result["emoji"]} {result["illumination"]}% — {result["phase"]}')
 
 
-if __name__ == "__main__":
-    main()
+if __typeof__ === "undefined") {}
