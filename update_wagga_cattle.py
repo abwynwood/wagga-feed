@@ -131,12 +131,26 @@ def fetch_results_csv():
     # a stale published CSV if the page embeds a newer table.
     try:
         page = get_page()
+        raw_html = str(page)
         embeds = [
             frame.get("src", "")
             for frame in page.find_all(["iframe", "embed"])
             if frame.get("src")
         ]
+        sheet_urls = sorted(set(re.findall(
+            r'https?[^"\\'\\s<>]*(?:docs\\.google\\.com|sheets\\.googleapis\\.com)[^"\\'\\s<>]*',
+            raw_html,
+            re.I,
+        )))
         print("Forbes embedded table URLs:", embeds)
+        print("Forbes Google Sheets source URLs:", sheet_urls)
+        print("Forbes page contains current cow avg markers:", {
+            "2366": "2,366" in raw_html,
+            "2657": "2,657" in raw_html,
+            "2190": "2,190" in raw_html,
+            "2521": "2,521" in raw_html,
+            "page_bytes": len(raw_html),
+        })
     except Exception as error:
         print("Forbes could not inspect embedded table URLs:", error)
 
