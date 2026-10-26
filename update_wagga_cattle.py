@@ -172,7 +172,7 @@ def fetch_results_csv():
                 and any("processor" in cell.casefold() for cell in row)
                 for row in table_rows
             )
-            if has_targets and ("category - nsw" in joined or "fat score - nsw" in joined):
+            if has_targets and "category" in joined and "range" in joined and "sale prefix" in joined and "fat score" in joined and "$/head" in joined:
                 output = io.StringIO()
                 writer = csv.writer(output)
                 writer.writerows(table_rows)
@@ -248,9 +248,10 @@ def parse_results_table(csv_text):
     for i, row in enumerate(rows):
         joined = " | ".join(clean(cell) for cell in row).casefold()
         if (
-            "category - nsw" in joined
-            and "range - nsw" in joined
-            and "sale prefix - nsw" in joined
+            any(clean(cell).casefold().startswith("category") for cell in row)
+            and any(clean(cell).casefold().startswith("range") for cell in row)
+            and any(clean(cell).casefold().startswith("sale prefix") for cell in row)
+            and any(clean(cell).casefold().startswith("fat score") for cell in row)
         ):
             header_index = i
             break
@@ -333,11 +334,11 @@ def parse_results_table(csv_text):
     })
 
     columns = {
-        "category": find_column("category - nsw", default=0),
-        "range": find_column("range - nsw", default=1),
-        "sale_prefix": find_column("sale prefix - nsw", default=2),
-        "score": find_column("muscle score - nsw", default=3),
-        "score_number": find_column("fat score - nsw", default=4),
+        "category": find_column("category", default=0),
+        "range": find_column("range", default=1),
+        "sale_prefix": find_column("sale prefix", default=2),
+        "score": find_column("muscle score", default=3),
+        "score_number": find_column("fat score", default=4),
         "dollar_avg": dollar_avg,
     }
 
