@@ -205,23 +205,31 @@ def parse_results_table(csv_text):
             dollar_group_end = col_index
             break
 
+    # The published CSV places the merged "$/head" group label one column
+    # before its actual Min/Max/Avg values (the preceding Change column is
+    # included in the merged-heading alignment). Locate the first real
+    # consecutive Min, Max, Avg trio AFTER that marker, not the nearest
+    # generic labels that can belong to the preceding Change/group boundary.
     price_labels = {}
-    for i in range(dollar_group_start, min(dollar_group_end, len(header))):
-        label = re.sub(r"[^a-z]", "", header[i])
-        if label in {"min", "max", "avg", "average"}:
-            price_labels[label] = i
+    trio = None
+    for i in range(dollar_group_start + 1, min(dollar_group_end, len(header)) - 2):
+        labels = [
+            re.sub(r"[^a-z]", "", header[j])
+            for j in (i, i + 1, i + 2)
+        ]
+        if labels[0] == "min" and labels[1] == "max" and labels[2] in {"avg", "average"}:
+            trio = (i, i + 1, i + 2)
+            break
 
-    dollar_avg = price_labels.get("avg") or price_labels.get("average")
-    if (
-        price_labels.get("min") is None
-        or dollar_avg is None
-        or price_labels.get("max") is None
-    ):
+    if trio is None:
         raise ValueError(
-            "Forbes $/head Min, Max, Avg columns not found in the identified "
-            "price group: "
+            "Forbes consecutive $/head Min, Max, Avg columns not found after "
+            "the group heading: "
             + repr({"group_row": group_row, "subheaders": header, "start": dollar_group_start, "end": dollar_group_end})
         )
+
+    price_labels = {"min": trio[0], "max": trio[1], "avg": trio[2]}
+    dollar_avg = price_labels["avg"]
     print(
         "Forbes using $/head columns:",
         {"min": price_labels["min"], "max": price_labels["max"], "avg": dollar_avg},
