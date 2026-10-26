@@ -504,6 +504,19 @@ def main():
         for key, target in TARGETS.items():
             current[key], selected_scores[key] = find_target_values(results, target)
 
+        # Agora's published CSV export is behind the live table for the
+        # 26 October 2026 sale. The live table values were verified from the
+        # screenshots supplied for this report: FS2 Avg $2,366 and FS3 Avg
+        # $2,657. Apply this dated correction only to that sale; FS4 is never
+        # included in the cow average.
+        if report_date.date().isoformat() == "2026-10-26":
+            current["cows"] = (2366 + 2657) / 2
+            selected_scores["cows"] = {"2": 2366.0, "3": 2657.0}
+            print(
+                "Forbes cow values corrected from verified live-table figures "
+                "for 2026-10-26: FS2=$2,366, FS3=$2,657; average=$2,511.50"
+            )
+
         print("Forbes selected cow fat scores:", selected_scores["cows"])
         print("Forbes selected feeder fat scores:", selected_scores["feeder"])
 
