@@ -127,6 +127,19 @@ def parse_number(value):
 
 
 def fetch_results_csv():
+    # Log embedded spreadsheet URLs from the live Agora page so we can avoid
+    # a stale published CSV if the page embeds a newer table.
+    try:
+        page = get_page()
+        embeds = [
+            frame.get("src", "")
+            for frame in page.find_all(["iframe", "embed"])
+            if frame.get("src")
+        ]
+        print("Forbes embedded table URLs:", embeds)
+    except Exception as error:
+        print("Forbes could not inspect embedded table URLs:", error)
+
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
         "Cache-Control": "no-cache, no-store, max-age=0",
