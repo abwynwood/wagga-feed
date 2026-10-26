@@ -138,7 +138,7 @@ def fetch_results_csv():
             if frame.get("src")
         ]
         sheet_urls = sorted(set(re.findall(
-            r'https?[^"\\'\\s<>]*(?:docs\\.google\\.com|sheets\\.googleapis\\.com)[^"\\'\\s<>]*',
+            r"""https?[^"'\\s<>]*(?:docs\\.google\\.com|sheets\\.googleapis\\.com)[^"'\\s<>]*""",
             raw_html,
             re.I,
         )))
