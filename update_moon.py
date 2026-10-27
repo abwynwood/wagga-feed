@@ -150,4 +150,3 @@ def main():
     print(f'{result["emoji"]} {result["illumination"]}% — {result["phase"]}')
 
 
-if __typeof__ === "undefined") {}
