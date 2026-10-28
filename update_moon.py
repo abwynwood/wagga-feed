@@ -150,3 +150,5 @@ def main():
     print(f'{result["emoji"]} {result["illumination"]}% — {result["phase"]}')
 
 
+if __name__ == "__main__":
+    main()
