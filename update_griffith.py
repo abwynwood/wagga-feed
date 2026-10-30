@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 import html
-import csv
-import io
 import re
 import json
 import xml.etree.ElementTree as ET
@@ -31,29 +29,7 @@ def get_page(url=SOURCE_URL):
     soup = BeautifulSoup(response.text, "html.parser")
     text = re.sub(r"\s+", " ", html.unescape(soup.get_text(" ", strip=True))).strip()
 
-    # Agora publishes the Griffith results as a Google Sheet. The published
-    # sheet is much more stable to scrape than the changing prose report.
-    sheet_csv_url = (
-        "https://docs.google.com/spreadsheets/d/e/"
-        "2PACX-1vQvF3XqMuChUt0hMos5MUUsDqxehGI31xgbT_NGY7JEPBcc_cnfBqdXDYuskLZ6nrr5yOfAP0hm8LYY/"
-        "pub?gid=404704508&single=true&output=csv"
-    )
-    # Google Sheets can be cached separately from the report page. Bust its
-    # cache too, otherwise the report date and price table can get out of sync.
-    sheet_separator = "&" if "?" in sheet_csv_url else "?"
-    fresh_sheet_url = f"{sheet_csv_url}{sheet_separator}wagga_feed_ts={int(time())}"
-    csv_response = requests.get(
-        fresh_sheet_url,
-        timeout=30,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
-            "Cache-Control": "no-cache, no-store, max-age=0",
-            "Pragma": "no-cache",
-        },
-    )
-    csv_response.raise_for_status()
-
-    return soup, text, csv_response.text
+    return soup, text
 
 
 def get_text(url=SOURCE_URL):
@@ -219,105 +195,97 @@ def weight_bounds(weight_text):
     return None, None
 
 
-def parse_results_table(csv_text):
+def parse_results_table(soup):
     """
-    Read the published Griffith results Google Sheet as CSV.
-
-    Locate the $/head Min, Max and Average columns by their header labels,
-    rather than fixed positions: Agora can rearrange these columns between
-    weekly reports. Comparisons use the Average column; displayed ranges use
-    Min and Max. Blank category/prefix cells inherit the preceding value.
+    Parse the Min, Max and Avg $/head columns directly from Agora's live
+    Griffith report table. Do not use the separately published Google Sheet:
+    it can lag behind the report and produce stale comparison averages.
     """
-    rows = list(csv.reader(io.StringIO(csv_text)))
     records = []
+    table_found = False
 
-    header_index = None
-    for i, row in enumerate(rows):
-        joined = " | ".join(clean_cell(x) for x in row)
-        if "Category - NSW" in joined and "Sale Prefix - NSW" in joined:
-            header_index = i
-            break
+    for table in soup.find_all("table"):
+        rows = table.find_all("tr")
+        header_index = None
+        headers = []
 
-    if header_index is None:
-        return {}
+        for i, row in enumerate(rows):
+            cells = [clean_cell(cell.get_text(" ", strip=True)) for cell in row.find_all(["th", "td"], recursive=False)]
+            normalized = [re.sub(r"[^a-z]", "", value.lower()) for value in cells]
+            if all(term in normalized for term in ("category", "weightrange", "saleprefix", "head")):
+                # This is the live sale-results table. Locate the first $/head
+                # Min/Max/Avg group after Head and its Change column.
+                header_index = i
+                headers = normalized
+                break
 
-    headers = [clean_cell(x).lower() for x in rows[header_index]]
-
-    head_index = next((i for i, h in enumerate(headers) if h.strip() in ("head", "head count", "no. head")), None)
-    if head_index is None:
-        raise RuntimeError("Agora Griffith sheet header did not identify the Head column: " + repr(headers))
-
-    # The sheet's column labels are only "Min", "Avg", "Max" (not "$/head
-    # Min" etc.), and Agora has changed their order between weekly reports.
-    # The $/head group is the first Min/Avg/Max group immediately after Head
-    # and its Change column. Resolve each column by its current label.
-    price_start = head_index + 2
-    price_labels = {
-        re.sub(r"[^a-z]", "", headers[i].lower()): i
-        for i in range(price_start, min(price_start + 3, len(headers)))
-    }
-    min_index = price_labels.get("min")
-    max_index = price_labels.get("max")
-    avg_index = price_labels.get("avg") or price_labels.get("average")
-
-    if min_index is None or max_index is None or avg_index is None:
-        raise RuntimeError(
-            "Agora Griffith sheet could not identify Min, Avg and Max in the $/head group: "
-            + repr(headers)
-        )
-
-    current_category = ""
-    current_prefix = ""
-
-    for row in rows[header_index + 1:]:
-        cells = [clean_cell(x) for x in row]
-        if len(cells) <= max(min_index, max_index, avg_index):
+        if header_index is None:
             continue
 
-        category = cells[0] or current_category
-        prefix = cells[1] or current_prefix
-        if category:
-            current_category = category
-        if prefix:
-            current_prefix = prefix
+        head_index = headers.index("head")
+        price_start = head_index + 2
+        price_labels = {
+            headers[i]: i
+            for i in range(price_start, min(price_start + 3, len(headers)))
+        }
+        min_index = price_labels.get("min")
+        max_index = price_labels.get("max")
+        avg_index = price_labels.get("avg") or price_labels.get("average")
+        if min_index is None or max_index is None or avg_index is None:
+            raise RuntimeError("Agora live Griffith table has an unexpected $/head header layout: " + repr(headers))
 
-        if not current_category or not current_prefix:
-            continue
+        table_found = True
+        current_category = ""
+        current_prefix = ""
 
-        def numeric_cell(index):
-            raw = re.sub(r"[^0-9.]", "", cells[index])
-            return float(raw) if raw else None
+        for row in rows[header_index + 1:]:
+            cells = [clean_cell(cell.get_text(" ", strip=True)) for cell in row.find_all(["th", "td"], recursive=False)]
+            if len(cells) <= max(min_index, max_index, avg_index, head_index, 2):
+                continue
 
-        min_price = numeric_cell(min_index)
-        max_price = numeric_cell(max_index)
-        avg_price = numeric_cell(avg_index)
-        if min_price is None or max_price is None or avg_price is None:
-            continue
+            category = cells[0] or current_category
+            prefix = cells[2] or current_prefix
+            if category:
+                current_category = category
+            if prefix:
+                current_prefix = prefix
+            if not current_category or not current_prefix:
+                continue
 
-        low_weight, high_weight = weight_bounds(cells[2])
-        head_count = numeric_cell(head_index) if head_index is not None and len(cells) > head_index else None
+            def numeric_cell(index):
+                raw = re.sub(r"[^0-9.]", "", cells[index])
+                return float(raw) if raw else None
 
-        records.append({
-            "category": current_category,
-            "sale_prefix": current_prefix,
-            "weight_low": low_weight,
-            "weight_high": high_weight,
-            "price_min": int(min_price),
-            "price_max": int(max_price),
-            "price_avg": avg_price,
-            "head_count": head_count,
-        })
+            min_price = numeric_cell(min_index)
+            max_price = numeric_cell(max_index)
+            avg_price = numeric_cell(avg_index)
+            if min_price is None or max_price is None or avg_price is None:
+                continue
+
+            low_weight, high_weight = weight_bounds(cells[1])
+            head_count = numeric_cell(head_index)
+            records.append({
+                "category": current_category,
+                "sale_prefix": current_prefix,
+                "weight_low": low_weight,
+                "weight_high": high_weight,
+                "price_min": int(min_price),
+                "price_max": int(max_price),
+                "price_avg": avg_price,
+                "head_count": head_count,
+            })
+
+    if not table_found:
+        raise RuntimeError("Agora live Griffith $/head results table was not found; refusing to use stale averages")
 
     results = {}
     for spec in TABLE_CATEGORIES:
         selected = []
-
         for record in records:
             if record["category"].lower() != spec["category"].lower():
                 continue
             if record["sale_prefix"].lower() != spec["sale_prefix"].lower():
                 continue
-
             if spec["min_weight"] is not None:
                 if record["weight_low"] is None:
                     continue
@@ -326,7 +294,6 @@ def parse_results_table(csv_text):
                         continue
                 elif record["weight_low"] > spec["max_weight"]:
                     continue
-
             selected.append(record)
 
         if selected:
@@ -342,6 +309,7 @@ def parse_results_table(csv_text):
             results[spec["label"]] = None
 
     return results
+
 
 def display_table_range(value_range):
     if value_range is None:
@@ -372,7 +340,7 @@ def yarding_comparison(current, previous):
 
 
 def main():
-    soup, text, csv_text = get_page()
+    soup, text = get_page()
     # The page can contain multiple embedded report blocks. A first-match
     # search can accidentally select last week's report; select the newest
     # dated report and read its yarding from that same block.
@@ -431,7 +399,7 @@ def main():
         return
 
     previous = load_previous_categories(sale_date)
-    table_results = parse_results_table(csv_text)
+    table_results = parse_results_table(soup)
     if not table_results or any(table_results.get(spec["label"]) is None for spec in TABLE_CATEGORIES):
         missing = [
             spec["label"] for spec in TABLE_CATEGORIES
