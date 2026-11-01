@@ -267,7 +267,7 @@ def update_xml(price_cents, grid_number, date_text, trend):
   <channel>
     <title>Bourke Goat Processor Grid</title>
     <link>{AGORA_URL}</link>
-    <description>Current Thomas Foods International Bourke goat processor grid published by Agora Livestock</description>
+    <description>Current Bourke goat grid published by Agora Livestock</description>
     <language>en-au</language>
     <item>
       <title>Bourke Goat Grid {grid_number} ({date_text})</title>
@@ -277,7 +277,6 @@ def update_xml(price_cents, grid_number, date_text, trend):
       <description><![CDATA[
         {price_line}
         {carcass_line}
-        <p><strong>Processor:</strong> Thomas Foods International, Bourke</p>
         {trend_line}
       ]]></description>
     </item>
