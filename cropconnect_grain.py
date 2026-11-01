@@ -291,52 +291,56 @@ def save_history(history):
 
 def trend_for(target, value, history):
     if value is None:
-        return ""
+        return "", ""
 
     now = datetime.now(timezone.utc)
     entries = history.setdefault(target, [])
 
-    # Use the 24-hour period centred on the equivalent time 7 days ago
-    # as the historical benchmark. This smooths out hourly price noise
-    # and makes the comparison represent the previous day's market level.
-    window_start = now - timedelta(days=7, hours=12)
-    window_end = now - timedelta(days=6, hours=12)
+    def comparison(days):
+        # Average the 24-hour period centred on the equivalent time N days ago.
+        # The wider sample smooths out hourly price noise.
+        window_start = now - timedelta(days=days, hours=12)
+        window_end = now - timedelta(days=days, hours=-12)
+        previous_prices = []
+        for entry in entries:
+            try:
+                timestamp = datetime.fromisoformat(entry["timestamp"])
+                price = float(entry["price"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if window_start <= timestamp <= window_end:
+                previous_prices.append(price)
 
-    previous_prices = []
-    for entry in entries:
-        try:
-            timestamp = datetime.fromisoformat(entry["timestamp"])
-            price = float(entry["price"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if window_start <= timestamp <= window_end:
-            previous_prices.append(price)
+        if not previous_prices:
+            return f"→ $0.00/t from {days} days ago"
+
+        previous_average = sum(previous_prices) / len(previous_prices)
+        change = value - previous_average
+        # Keep the same $5/t noise threshold for both comparison periods.
+        if abs(change) < 5:
+            return f"→ $0.00/t from {days} days ago"
+
+        arrow = "↑" if change > 0 else "↓"
+        sign = "+" if change > 0 else ""
+        return f"{arrow} {sign}${change:.2f}/t from {days} days ago"
+
+    trend_7d = comparison(7)
+    trend_30d = comparison(30)
 
     entries.append({"timestamp": now.isoformat(), "price": value})
+    # Retain enough history to cover the 30-day comparison window plus its
+    # 12-hour look-back margin.
     history[target] = [
         entry for entry in entries
-        if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()
+        if entry.get("timestamp", "") >= (now - timedelta(days=32)).isoformat()
     ]
+    return trend_7d, trend_30d
 
-    if not previous_prices:
-        return "➡️ $0/t"
-
-    previous_average = sum(previous_prices) / len(previous_prices)
-    change = value - previous_average
-
-    # Ignore small moves so the arrow does not flip with normal intraday noise.
-    if abs(change) < 5:
-        return "→ $0.00/t from 7 days ago"
-
-    arrow = "↑" if change > 0 else "↓"
-    sign = "+" if change > 0 else ""
-    return f"{arrow} {sign}${change:.2f}/t from 7 days ago"
-
-def write_xml(target, output, trend, filename):
+def write_xml(target, output, trend, trend_30d, filename):
     now = datetime.now(timezone.utc)
     pub_date = format_datetime(now, usegmt=True)
     slug = normalise(target)
-    description = f"{output}<br>{trend}" if trend else output
+    description = f"{output}<br>{trend}<br>{trend_30d}" if trend and trend_30d else (f"{output}<br>{trend}" if trend else output)
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -374,10 +378,10 @@ def update(location, grade, filename):
     value = matched.get(target)
     output = f"${value:.2f}/t" if value is not None else "No bids"
     history = load_history()
-    trend = trend_for(target, value, history) if value is not None else ""
+    trend, trend_30d = trend_for(target, value, history) if value is not None else ("", "")
     save_history(history)
     print(f"CropConnect snapshot: season={season}, target={target}, output={output}, trend={trend}")
-    write_xml(target, output, trend, filename)
+    write_xml(target, output, trend, trend_30d, filename)
     return output
 
 
