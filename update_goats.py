@@ -245,10 +245,10 @@ def trend_for(value, history):
 
     change = round(value - previous, 1)
     if change == 0:
-        return "→ Steady from 7 days ago"
+        return "→ 0 c/kg cwt from 7 days ago"
     if change > 0:
-        return f"↑ Firming +{change:g} c/kg cwt from 7 days ago"
-    return f"↓ Softer {change:g} c/kg cwt from 7 days ago"
+        return f"↑ +{change:g} c/kg cwt from 7 days ago"
+    return f"↓ {change:g} c/kg cwt from 7 days ago"
 
 
 def update_xml(price_cents, grid_number, date_text, trend):
