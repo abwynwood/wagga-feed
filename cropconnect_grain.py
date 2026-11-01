@@ -340,7 +340,7 @@ def write_xml(target, output, trend, trend_30d, filename):
     now = datetime.now(timezone.utc)
     pub_date = format_datetime(now, usegmt=True)
     slug = normalise(target)
-    description = f'{output}<br><small>{trend}</small><br><small>{trend_30d}</small>' if trend and trend_30d else (f"{output}<br><small>{trend}</small>" if trend else output)
+    description = f'<big>{output}</big><br><small>{trend}</small><br><small><small>{trend_30d}</small></small>' if trend and trend_30d else (f"<big>{output}</big><br><small>{trend}</small>" if trend else f"<big>{output}</big>")
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
