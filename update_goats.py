@@ -268,9 +268,9 @@ def update_xml(price_cents, grid_number, date_text, trend, trend_30d):
     else:
         price_dollars = price_cents / 100
         carcass_value_15kg = price_dollars * 15
-        price_line = f"<p><strong>Price:</strong> {price_cents:g} c/kg cwt</p>"
+        price_line = f"<p><strong>Price:</strong> <big>{price_cents:g} c/kg cwt</big></p>"
         carcass_line = f"<p>(15kg carcass: \${carcass_value_15kg:.2f})</p>"
-    trend_line = f"<p><small>{trend}</small></p><p><small>{trend_30d}</small></p>" if trend and trend_30d else (f"<p><small>{trend}</small></p>" if trend else "")
+    trend_line = f"<p><small>{trend}</small></p><p><small><small>{trend_30d}</small></small></p>" if trend and trend_30d else (f"<p><small>{trend}</small></p>" if trend else "")
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
