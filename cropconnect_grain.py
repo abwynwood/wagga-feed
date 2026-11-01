@@ -312,7 +312,7 @@ def trend_for(target, value, history):
                 previous_prices.append(price)
 
         if not previous_prices:
-            return f"→ $0.00/t from {days} days ago"
+            return f"→ Steady from {days} days ago"
 
         previous_average = sum(previous_prices) / len(previous_prices)
         change = value - previous_average
