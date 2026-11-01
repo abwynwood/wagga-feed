@@ -221,37 +221,46 @@ def save_history(history):
 
 def trend_for(value, history):
     now = datetime.now(timezone.utc)
-    previous = None
+    previous_prices_by_period = {}
 
-    for entry in reversed(history):
-        try:
-            timestamp = datetime.fromisoformat(entry["timestamp"])
-            price = float(entry["price"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if timestamp <= now - timedelta(days=7):
-            previous = price
-            break
+    for days in (7, 30):
+        window_start = now - timedelta(days=days, hours=12)
+        window_end = now - timedelta(days=days, hours=-12)
+        previous_prices = []
+        for entry in history:
+            try:
+                timestamp = datetime.fromisoformat(entry["timestamp"])
+                price = float(entry["price"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if window_start <= timestamp <= window_end:
+                previous_prices.append(price)
+        previous_prices_by_period[days] = previous_prices
+
+    def comparison(days):
+        previous_prices = previous_prices_by_period[days]
+        if not previous_prices:
+            return f"→ 0 c/kg cwt from {days} days ago"
+        previous_average = sum(previous_prices) / len(previous_prices)
+        change = round(value - previous_average, 1)
+        if change == 0:
+            return f"→ 0 c/kg cwt from {days} days ago"
+        if change > 0:
+            return f"↑ +{change:g} c/kg cwt from {days} days ago"
+        return f"↓ {change:g} c/kg cwt from {days} days ago"
+
+    trend_7d = comparison(7)
+    trend_30d = comparison(30)
 
     history.append({"timestamp": now.isoformat(), "price": value})
+    # Keep 32 days so the full 24-hour benchmark window for day 30 remains.
     history[:] = [
-        entry
-        for entry in history
-        if entry.get("timestamp", "") >= (now - timedelta(days=30)).isoformat()
+        entry for entry in history
+        if entry.get("timestamp", "") >= (now - timedelta(days=32)).isoformat()
     ]
+    return trend_7d, trend_30d
 
-    if previous is None:
-        return "➡️ 0 c/kg"
-
-    change = round(value - previous, 1)
-    if change == 0:
-        return "→ 0 c/kg cwt from 7 days ago"
-    if change > 0:
-        return f"↑ +{change:g} c/kg cwt from 7 days ago"
-    return f"↓ {change:g} c/kg cwt from 7 days ago"
-
-
-def update_xml(price_cents, grid_number, date_text, trend):
+def update_xml(price_cents, grid_number, date_text, trend, trend_30d):
     now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")
     if price_cents is None:
         price_line = "<p><strong>Price:</strong> Unavailable</p>"
@@ -261,7 +270,7 @@ def update_xml(price_cents, grid_number, date_text, trend):
         carcass_value_15kg = price_dollars * 15
         price_line = f"<p><strong>Price:</strong> {price_cents:g} c/kg cwt</p>"
         carcass_line = f"<p>(15kg carcass: \${carcass_value_15kg:.2f})</p>"
-    trend_line = f"<p>{trend}</p>" if trend else ""
+    trend_line = f"<p>{trend}</p><p>{trend_30d}</p>" if trend and trend_30d else (f"<p>{trend}</p>" if trend else "")
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
@@ -290,11 +299,11 @@ if __name__ == "__main__":
         price_cents, grid_number, date_text = fetch_bourke_grid()
         history = load_history()
         if price_cents is None:
-            update_xml(None, grid_number, date_text, "")
+            update_xml(None, grid_number, date_text, "", "")
         else:
-            trend = trend_for(price_cents, history)
+            trend, trend_30d = trend_for(price_cents, history)
             save_history(history)
-            update_xml(price_cents, grid_number, date_text, trend)
+            update_xml(price_cents, grid_number, date_text, trend, trend_30d)
     except Exception as error:
         print("Goat update failed:", error)
         raise
