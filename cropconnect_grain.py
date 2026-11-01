@@ -326,12 +326,11 @@ def trend_for(target, value, history):
 
     # Ignore small moves so the arrow does not flip with normal intraday noise.
     if abs(change) < 5:
-        return "→ Steady from 7 days ago"
+        return "→ $0.00/t from 7 days ago"
 
-    direction = "Firming" if change > 0 else "Softer"
     arrow = "↑" if change > 0 else "↓"
     sign = "+" if change > 0 else ""
-    return f"{arrow} {direction} {sign}${change:.2f}/t from 7 days ago"
+    return f"{arrow} {sign}${change:.2f}/t from 7 days ago"
 
 def write_xml(target, output, trend, filename):
     now = datetime.now(timezone.utc)
