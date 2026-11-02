@@ -318,7 +318,7 @@ def trend_for(target, value, history):
         change = value - previous_average
         # Keep the same $5/t noise threshold for both comparison periods.
         if abs(change) < 5:
-            return f"→ $0.00/t from {days} days ago"
+            return f"→ Steady from {days} days ago"
 
         arrow = "↑" if change > 0 else "↓"
         sign = "+" if change > 0 else ""
