@@ -244,7 +244,7 @@ def trend_for(value, history):
         previous_average = sum(previous_prices) / len(previous_prices)
         change = round(value - previous_average, 1)
         if change == 0:
-            return f"→ 0 c/kg cwt from {days} days ago"
+            return f"→ Steady from {days} days ago"
         if change > 0:
             return f"↑ +{change:g} c/kg cwt from {days} days ago"
         return f"↓ {change:g} c/kg cwt from {days} days ago"
