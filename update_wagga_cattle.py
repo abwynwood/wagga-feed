@@ -109,6 +109,40 @@ def parse_report_date(text):
         return None
 
 
+
+def parse_embedded_date(text):
+    """Find an Australian-style sale date in a published sheet."""
+    text = html.unescape(text or "").replace("\\xa0", " ")
+    patterns = (
+        r"\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+([A-Za-z]+)\\s+(\\d{4})\\b",
+        r"\\b(\\d{1,2})/(\\d{1,2})/(\\d{4})\\b",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, re.I):
+            try:
+                if "/" in match.group(0):
+                    return datetime.strptime(
+                        f"{match.group(1)}/{match.group(2)}/{match.group(3)}",
+                        "%d/%m/%Y",
+                    )
+                return datetime.strptime(
+                    f"{match.group(1)} {match.group(2)} {match.group(3)}",
+                    "%d %B %Y",
+                )
+            except ValueError:
+                continue
+    return None
+
+
+def parse_csv_report_date(csv_text):
+    """Read the sale date carried in the published results CSV."""
+    for row in list(csv.reader(io.StringIO(csv_text)))[:20]:
+        date = parse_embedded_date(" ".join(clean(cell) for cell in row))
+        if date:
+            return date
+    return None
+
+
 def date_title(report_date, fallback):
     date = report_date or fallback
     day = date.day
@@ -126,106 +160,80 @@ def parse_number(value):
         return None
 
 
-def fetch_results_csv():
-    # Log embedded spreadsheet URLs from the live Agora page so we can avoid
-    # a stale published CSV if the page embeds a newer table.
-    try:
-        page = get_page()
-        raw_html = str(page)
-        embeds = [
-            frame.get("src", "")
-            for frame in page.find_all(["iframe", "embed"])
-            if frame.get("src")
-        ]
-        sheet_urls = sorted(set(re.findall(
-            r"""https?[^"'\s<>]*(?:docs\.google\.com|sheets\.googleapis\.com)[^"'\s<>]*""",
-            raw_html,
-            re.I,
-        )))
-        print("Forbes embedded table URLs:", embeds)
-        print("Forbes Google Sheets source URLs:", sheet_urls)
-        print("Forbes page contains current cow avg markers:", {
-            "2366": "2,366" in raw_html,
-            "2657": "2,657" in raw_html,
-            "2190": "2,190" in raw_html,
-            "2521": "2,521" in raw_html,
-            "page_bytes": len(raw_html),
-        })
-
-        # The actual Agora page HTML contains the live table. Read that table
-        # directly before trying the separate Google Sheets export, which can
-        # lag behind the figures visible on Agora.
-        for table in page.find_all("table"):
-            table_rows = []
-            for tr in table.find_all("tr"):
-                cells = [
-                    clean(cell.get_text(" ", strip=True))
-                    for cell in tr.find_all(["th", "td"], recursive=False)
-                ]
-                if cells:
-                    table_rows.append(cells)
-            joined = " | ".join(cell for row in table_rows for cell in row).casefold()
-            # Agora's HTML table uses rowspans for Category/Range/Sale
-            # Prefix, so the Cows/520+/Processor labels may not all repeat on
-            # the individual fat-score rows. The live $/head averages are the
-            # strongest indicator that this is the current table.
-            has_live_prices = any(
-                "2,366" in cell or "2,657" in cell
-                for row in table_rows for cell in row
-            )
-            if has_live_prices and "category" in joined and "range" in joined and "sale prefix" in joined and "fat score" in joined:
-                output = io.StringIO()
-                writer = csv.writer(output)
-                writer.writerows(table_rows)
-                print(f"Forbes results loaded from live Agora HTML table: {len(table_rows)} rows")
-                return output.getvalue()
-
-        # Show the actual source context for the live values, so the parser
-        # can use the page's real embedded data rather than the stale CSV.
-        for marker in ("2,366", "2,657"):
-            pos = raw_html.find(marker)
-            if pos >= 0:
-                print(f"Forbes live HTML context {marker}:", raw_html[max(0, pos-700):pos+700])
-    except Exception as error:
-        print("Forbes could not inspect embedded table URLs:", error)
-
+def fetch_results_csv(page, report_date):
+    """Fetch Forbes prices only when their source is tied to Agora's report date."""
     headers = {
         "User-Agent": "Mozilla/5.0 (compatible; wagga-feed/1.0)",
         "Cache-Control": "no-cache, no-store, max-age=0",
         "Pragma": "no-cache",
     }
+    expected = report_date.date()
 
-    # Agora's visible table is embedded from the published HTML worksheet.
-    # Prefer that exact table over the separate CSV export, which can lag
-    # behind the values shown in the browser.
+    # First use a results table actually present in the live Agora page.
+    # Its date is the Report Date parsed from this same page.
+    for table in page.find_all("table"):
+        table_rows = []
+        for tr in table.find_all("tr"):
+            cells = [
+                clean(cell.get_text(" ", strip=True))
+                for cell in tr.find_all(["th", "td"], recursive=False)
+            ]
+            if cells:
+                table_rows.append(cells)
+        joined = " | ".join(cell for row in table_rows for cell in row).casefold()
+        if all(term in joined for term in ("category", "range", "sale prefix", "fat score")):
+            output = io.StringIO()
+            csv.writer(output).writerows(table_rows)
+            print(
+                "Forbes results loaded from live Agora HTML table; "
+                f"using page report date {expected:%Y-%m-%d}"
+            )
+            return output.getvalue()
+
+    # The published worksheet is a separate source, so its own displayed
+    # sale date must match Agora before its rows can be used.
     html_url = (
         "https://docs.google.com/spreadsheets/d/e/"
         "2PACX-1vTJCYUTqmjXBC_SfhIIE-dzxih0HwuiTjLqIats2wurbtEmW8zs-6DiNtBxqTs_HQvkps6Pey63q4kV/"
         "pubhtml?chrome=false&gid=161375687&headers=false&single=true&widget=true"
     )
     try:
-        response = requests.get(html_url, timeout=30, headers=headers)
+        response = requests.get(
+            html_url + f"&wagga_feed_ts={int(time())}",
+            timeout=30,
+            headers=headers,
+        )
         response.raise_for_status()
         sheet = BeautifulSoup(response.text, "html.parser")
-        for table in sheet.find_all("table"):
-            table_rows = []
-            for tr in table.find_all("tr"):
-                cells = [
-                    clean(cell.get_text(" ", strip=True))
-                    for cell in tr.find_all(["th", "td"], recursive=False)
-                ]
-                if cells:
-                    table_rows.append(cells)
-            joined = " ".join(cell for row in table_rows for cell in row).casefold()
-            if "category - nsw" in joined and "range - nsw" in joined:
-                output = io.StringIO()
-                writer = csv.writer(output)
-                writer.writerows(table_rows)
-                print(f"Forbes results loaded from embedded HTML sheet: {len(table_rows)} rows")
-                return output.getvalue()
-        print("Forbes embedded HTML sheet did not contain the expected table; falling back to CSV")
+        sheet_date = parse_embedded_date(sheet.get_text(" ", strip=True))
+        print(
+            "Forbes published HTML sheet:",
+            {"bytes": len(response.text), "sale_date": sheet_date},
+        )
+        if sheet_date is not None and sheet_date.date() == expected:
+            for table in sheet.find_all("table"):
+                table_rows = []
+                for tr in table.find_all("tr"):
+                    cells = [
+                        clean(cell.get_text(" ", strip=True))
+                        for cell in tr.find_all(["th", "td"], recursive=False)
+                    ]
+                    if cells:
+                        table_rows.append(cells)
+                joined = " | ".join(cell for row in table_rows for cell in row).casefold()
+                if all(term in joined for term in ("category", "range", "sale prefix", "fat score")):
+                    output = io.StringIO()
+                    csv.writer(output).writerows(table_rows)
+                    print(f"Forbes results loaded from date-matched HTML sheet: {len(table_rows)} rows")
+                    return output.getvalue()
+        else:
+            print(
+                "Forbes published HTML sheet date does not match Agora; "
+                f"expected {expected:%Y-%m-%d}, got "
+                f"{sheet_date.date() if sheet_date else 'no date'}"
+            )
     except Exception as error:
-        print("Forbes embedded HTML sheet unavailable; falling back to CSV:", error)
+        print("Forbes published HTML sheet unavailable:", error)
 
     errors = []
     for url in (
@@ -235,13 +243,35 @@ def fetch_results_csv():
         try:
             response = requests.get(url, timeout=30, headers=headers)
             response.raise_for_status()
-            if "Category - NSW" in response.text and "Range - NSW" in response.text:
-                print(f"Forbes results CSV loaded: {len(response.text)} bytes")
-                return response.text
-            errors.append("unexpected response from " + url)
+            if "Category - NSW" not in response.text or "Range - NSW" not in response.text:
+                errors.append("unexpected response from " + url)
+                continue
+
+            csv_date = parse_csv_report_date(response.text)
+            if csv_date is None:
+                errors.append("CSV has no identifiable sale date: " + url)
+                continue
+            if csv_date.date() != expected:
+                errors.append(
+                    f"stale CSV dated {csv_date:%Y-%m-%d}; "
+                    f"Agora report is {expected:%Y-%m-%d}"
+                )
+                continue
+
+            print(
+                f"Forbes results CSV loaded and date verified: "
+                f"{len(response.text)} bytes; {csv_date:%Y-%m-%d}"
+            )
+            return response.text
         except Exception as error:
             errors.append(str(error))
-    raise ValueError("Forbes published CSV unavailable: " + " | ".join(errors))
+
+    raise ValueError(
+        "No Forbes results source could be verified against the current Agora "
+        f"report date {expected:%Y-%m-%d}; refusing to replace the existing feed. "
+        + " | ".join(errors)
+    )
+
 def parse_results_table(csv_text):
     rows = list(csv.reader(io.StringIO(csv_text)))
     header_index = None
@@ -530,7 +560,7 @@ def main():
         if yarding is None:
             raise ValueError("Forbes total yarding not found")
 
-        results_csv = fetch_results_csv()
+        results_csv = fetch_results_csv(page, report_date)
         results = parse_results_table(results_csv)
 
         current = {}
