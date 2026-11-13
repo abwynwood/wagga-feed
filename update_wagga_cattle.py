@@ -112,10 +112,10 @@ def parse_report_date(text):
 
 def parse_embedded_date(text):
     """Find an Australian-style sale date in a published sheet."""
-    text = html.unescape(text or "").replace("\\xa0", " ")
+    text = html.unescape(text or "").replace("\xa0", " ")
     patterns = (
-        r"\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+([A-Za-z]+)\\s+(\\d{4})\\b",
-        r"\\b(\\d{1,2})/(\\d{1,2})/(\\d{4})\\b",
+        r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\s+(\d{4})\b",
+        r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b",
     )
     for pattern in patterns:
         for match in re.finditer(pattern, text, re.I):
