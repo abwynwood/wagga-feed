@@ -237,6 +237,7 @@ def parse_results_table(soup):
         table_found = True
         current_category = ""
         current_prefix = ""
+        current_weight = ""
 
         for row in rows[header_index + 1:]:
             cells = [clean_cell(cell.get_text(" ", strip=True)) for cell in row.find_all(["th", "td"], recursive=False)]
@@ -244,9 +245,12 @@ def parse_results_table(soup):
                 continue
 
             category = cells[0] or current_category
+            weight = cells[1] or current_weight
             prefix = cells[2] or current_prefix
             if category:
                 current_category = category
+            if weight:
+                current_weight = weight
             if prefix:
                 current_prefix = prefix
             if not current_category or not current_prefix:
@@ -262,7 +266,10 @@ def parse_results_table(soup):
             if min_price is None or max_price is None or avg_price is None:
                 continue
 
-            low_weight, high_weight = weight_bounds(cells[1])
+            # Agora leaves Weight Range blank on continuation rows for
+            # additional fat scores. Carry the last range down so every
+            # matching row is included in the category average.
+            low_weight, high_weight = weight_bounds(current_weight)
             head_count = numeric_cell(head_index)
             records.append({
                 "category": current_category,
