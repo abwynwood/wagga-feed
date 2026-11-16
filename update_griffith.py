@@ -168,7 +168,7 @@ TABLE_CATEGORIES = [
     },
     {
         "label": "Dorper Lambs 20-26kg",
-        "category": "Lamb",
+        "category": "Young Lamb",
         "sale_prefix": "Dorper",
         "min_weight": 20.1,
         "max_weight": 26.0,
@@ -299,11 +299,9 @@ def parse_results_table(soup):
         if selected:
             min_price = min(r["price_min"] for r in selected)
             max_price = max(r["price_max"] for r in selected)
-            weighted = [r for r in selected if r["head_count"] is not None and r["head_count"] > 0]
-            if weighted:
-                average = sum(r["price_avg"] * r["head_count"] for r in weighted) / sum(r["head_count"] for r in weighted)
-            else:
-                average = sum(r["price_avg"] for r in selected) / len(selected)
+            # The Dakboard lamb figure is the simple average of every
+            # matching Dorper $/head Avg row, regardless of fat score or head count.
+            average = sum(r["price_avg"] for r in selected) / len(selected)
             results[spec["label"]] = (min_price, max_price, average)
         else:
             results[spec["label"]] = None
