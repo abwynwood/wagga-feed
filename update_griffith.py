@@ -168,7 +168,10 @@ TABLE_CATEGORIES = [
     },
     {
         "label": "Dorper Lambs 20-26kg",
-        "category": "Young Lamb",
+        # Agora may publish the comprehensive Dorper results under either
+        # Young Lamb or Lamb. Keep the same sale prefix and weight filters
+        # and combine matching rows from both sections into one average.
+        "category": ["Young Lamb", "Lamb"],
         "sale_prefix": "Dorper",
         "min_weight": 20.1,
         "max_weight": 26.0,
@@ -289,7 +292,8 @@ def parse_results_table(soup):
     for spec in TABLE_CATEGORIES:
         selected = []
         for record in records:
-            if record["category"].lower() != spec["category"].lower():
+            allowed_categories = spec["category"] if isinstance(spec["category"], list) else [spec["category"]]
+            if record["category"].lower() not in {name.lower() for name in allowed_categories}:
                 continue
             if record["sale_prefix"].lower() != spec["sale_prefix"].lower():
                 continue
@@ -306,8 +310,9 @@ def parse_results_table(soup):
         if selected:
             min_price = min(r["price_min"] for r in selected)
             max_price = max(r["price_max"] for r in selected)
-            # The Dakboard lamb figure is the simple average of every
-            # matching Dorper $/head Avg row, regardless of fat score or head count.
+            # The Dakboard lamb figure is the simple average of every matching
+            # Dorper $/head Avg row across both Lamb and Young Lamb sections,
+            # regardless of fat score or head count.
             average = sum(r["price_avg"] for r in selected) / len(selected)
             results[spec["label"]] = (min_price, max_price, average)
         else:
