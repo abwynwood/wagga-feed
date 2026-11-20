@@ -410,9 +410,12 @@ def main():
             spec["label"] for spec in TABLE_CATEGORIES
             if not table_results or table_results.get(spec["label"]) is None
         ]
-        raise RuntimeError(
-            "Agora Griffith price table missing required categories: " + ", ".join(missing)
+        print(
+            "Agora Griffith report is incomplete; missing required categories: "
+            + ", ".join(missing)
+            + ". Keeping the existing feed and its original sale date unchanged."
         )
+        return
 
     current_values = {
         spec["label"]: category_value(table_results, spec["label"])
